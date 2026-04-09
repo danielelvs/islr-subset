@@ -168,5 +168,4 @@ cython_debug/
 00_datasets/
 99_model_output/
 
-*.csv
 *.DS_Store
