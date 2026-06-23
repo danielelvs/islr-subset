@@ -1,0 +1,75 @@
+experiment_name: ksl_resnet18
+dataset: ksl
+# KSL uses pre-processed OpenPose CSV — no subset/extractor config needed
+image_method: Skeleton-DML
+model: resnet18
+
+training:
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  patience: 5
+  seed: 42
+
+augmentation:
+  rotation_sigma: 12
+  zoom_sigma: 0.1
+  translate_x_sigma: 0.06
+  horizontal_flip_prob: 0.5
+
+# experiment_name: minds_2nd_resnet18
+# dataset: minds
+# data_path: data/processed/minds/2nd_imputed.csv
+# output_dir: experiments/minds_2nd_resnet18
+# subset: 2nd
+# extractor: mediapipe
+# imputation: spline
+# representation: Skeleton-DML
+# model: resnet18
+# training:
+#   epochs: 30
+#   batch_size: 64
+#   learning_rate: 0.0001
+#   weight_decay: 0.0001
+#   patience: 5
+#   seed: 42
+# augmentation:
+#   enabled: true
+#   rotation_sigma: 12
+#   zoom_sigma: 0.1
+#   translate_x_sigma: 0.06
+#   translate_y_sigma: 0.0
+#   translate_z_sigma: 0.0
+#   horizontal_flip_prob: 0.5
+# evaluation:
+#   protocol: lopo
+#   validation_strategy: previous_signer
+
+# experiment_name: ufop_2nd_resnet18
+# dataset: ufop
+# data_path: data/processed/ufop/2nd_imputed.csv
+# output_dir: experiments/ufop_2nd_resnet18
+# subset: 2nd
+# extractor: mediapipe
+# imputation: spline
+# representation: Skeleton-DML
+# model: resnet18
+# training:
+#   epochs: 30
+#   batch_size: 64
+#   learning_rate: 0.0001
+#   weight_decay: 0.0001
+#   patience: 5
+#   seed: 42
+# augmentation:
+#   enabled: true
+#   rotation_sigma: 12
+#   zoom_sigma: 0.1
+#   translate_x_sigma: 0.06
+#   translate_y_sigma: 0.0
+#   translate_z_sigma: 0.0
+#   horizontal_flip_prob: 0.5
+# evaluation:
+#   protocol: lopo
+#   validation_strategy: previous_signer
