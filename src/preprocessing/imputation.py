@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Spline / linear imputation of missing landmark values (NaN).
 
@@ -41,3 +42,5 @@ def impute_by_video(df: pd.DataFrame, landmark_columns: list[str]) -> pd.DataFra
     # )
     # df[landmark_columns] = df[landmark_columns].fillna(0)
     # return df
+
+impute_landmarks = impute_by_video

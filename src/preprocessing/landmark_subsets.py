@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Landmark subset definitions.
 
@@ -9,10 +10,71 @@ Each function returns a list of global holistic indices (0-542):
 """
 
 import numpy as np
-import mediapipe as mp
+# import mediapipe as mp
 
-HAND_LANDMARKS = [lm.name.lower() for lm in mp.solutions.hands.HandLandmark]
-POSE_LANDMARKS = [lm.name.lower() for lm in mp.solutions.pose.PoseLandmark]
+import numpy as np
+
+HAND_LANDMARKS = [
+    "wrist",
+    "thumb_cmc",
+    "thumb_mcp",
+    "thumb_ip",
+    "thumb_tip",
+    "index_finger_mcp",
+    "index_finger_pip",
+    "index_finger_dip",
+    "index_finger_tip",
+    "middle_finger_mcp",
+    "middle_finger_pip",
+    "middle_finger_dip",
+    "middle_finger_tip",
+    "ring_finger_mcp",
+    "ring_finger_pip",
+    "ring_finger_dip",
+    "ring_finger_tip",
+    "pinky_mcp",
+    "pinky_pip",
+    "pinky_dip",
+    "pinky_tip",
+]
+POSE_LANDMARKS = [
+    "nose",
+    "left_eye_inner",
+    "left_eye",
+    "left_eye_outer",
+    "right_eye_inner",
+    "right_eye",
+    "right_eye_outer",
+    "left_ear",
+    "right_ear",
+    "mouth_left",
+    "mouth_right",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_pinky",
+    "right_pinky",
+    "left_index",
+    "right_index",
+    "left_thumb",
+    "right_thumb",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+    "left_heel",
+    "right_heel",
+    "left_foot_index",
+    "right_foot_index",
+]
+
+# HAND_LANDMARKS = [lm.name.lower() for lm in mp.solutions.hands.HandLandmark]
+# POSE_LANDMARKS = [lm.name.lower() for lm in mp.solutions.pose.PoseLandmark]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,6 +126,7 @@ def subset_laines() -> list[int]:
     """David/Laines subset: selected face landmarks + hands + upper-body pose."""
     FACE = [46, 52, 53, 65, 295, 283, 282, 276, 7, 159, 155, 145, 382, 386, 249, 374, 324, 13, 78, 14]
     BODY = [489, 500, 501, 502, 503]
+    # BODY = [500, 501, 502, 503, 504, 505]
     LHAND = list(range(468, 489))
     RHAND = list(range(522, 543))
     return FACE + LHAND + BODY + RHAND

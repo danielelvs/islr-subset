@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Filter pipeline: select landmark subset + optional imputation → write CSV.
 """
@@ -59,3 +60,5 @@ def filter_and_save(
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     result.to_csv(output_path, index=False)
     print(f"Saved {len(result)} rows → {output_path}")
+
+filter_landmarks = filter_and_save

@@ -169,3 +169,6 @@ cython_debug/
 99_model_output/
 
 *.DS_Store
+
+data/*/**
+experiments/*/**

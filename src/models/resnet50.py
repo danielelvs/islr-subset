@@ -1,3 +1,4 @@
+from __future__ import annotations
 from torch import nn
 from torchvision.models import resnet50
 from models.base_model import BaseModel

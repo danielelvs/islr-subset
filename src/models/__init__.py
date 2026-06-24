@@ -1,3 +1,4 @@
+from __future__ import annotations
 from models.base_model import BaseModel
 from models.resnet18 import Resnet18Model
 from models.resnet50 import Resnet50Model          # FIX: was Resnet18Model in original

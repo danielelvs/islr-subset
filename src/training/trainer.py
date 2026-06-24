@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Unified trainer for all datasets (MINDS, UFOP, KSL, Include50).
 
@@ -253,7 +254,10 @@ class Trainer:
 
         with open(json_path, "w") as f:
             json.dump(result, f, default=int)
-        torch.save(model.state_dict(), model_path)
+
+        if cfg.get("save_model", True):
+            torch.save(model.state_dict(), model_path)
+        # torch.save(model.state_dict(), model_path)
 
         print(f"Results → {json_path}")
         return result

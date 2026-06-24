@@ -1,3 +1,4 @@
+from __future__ import annotations
 from representations.base_representation import BaseRepresentation
 from representations.skeleton_dml import SkeletonDMLRepresentation
 from representations.skeleton_magnitude import SkeletonMagnitudeRepresentation

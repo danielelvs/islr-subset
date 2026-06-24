@@ -1,3 +1,4 @@
+from __future__ import annotations
 import timm
 from torch import nn
 from models.base_model import BaseModel

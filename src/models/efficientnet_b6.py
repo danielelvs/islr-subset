@@ -1,3 +1,4 @@
+from __future__ import annotations
 from torch import nn
 from torchvision.models import efficientnet_b6, EfficientNet_B6_Weights
 from models.base_model import BaseModel

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from torch import nn
 from torchvision.models import vit_l_16, ViT_L_16_Weights
 from models.base_model import BaseModel

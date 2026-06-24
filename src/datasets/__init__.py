@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datasets.base_dataset import (
     BaseVideoDataset,
     BaseCsvDataset,

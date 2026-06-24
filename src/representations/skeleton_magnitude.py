@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numpy as np
 from representations.base_representation import BaseRepresentation
 

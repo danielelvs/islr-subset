@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 LopoDataset — Leave-One-Person-Out dataset for skeleton-based ISLR.
 
