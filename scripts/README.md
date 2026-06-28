@@ -21,6 +21,8 @@ scripts/
 │   ├── run_dataset_batch.py
 │   ├── run_dataset_all.sh
 │   ├── run_dataset_imputation_only.sh
+│   ├── run_include50_split.py
+│   ├── run_include50_split_all.sh
 │   └── summarize_dataset_results.py
 ├── setup/
 │   └── check_environment.py
@@ -173,6 +175,21 @@ python scripts/batch/run_dataset_batch.py \
   --device cuda
 ```
 
+Exemplo com INCLUDE-50, usando split fixo:
+
+```bash
+python scripts/batch/run_include50_split.py \
+  --dataset include50 \
+  --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
+  --results-dir experiments/include50_split_grid \
+  --subset 2nd \
+  --imputation true \
+  --device cuda \
+  --epochs 2 \
+  --batch-size 64 \
+  --patience 1
+```
+
 ---
 
 ## 6. Rodar todas as condições de um dataset
@@ -184,12 +201,29 @@ python scripts/batch/run_dataset_batch.py \
 Ou:
 
 ```bash
-./scripts/batch/run_dataset_all.sh include50
 ./scripts/batch/run_dataset_all.sh minds
 ./scripts/batch/run_dataset_all.sh ufop
 ```
 
-Esse comando usa o arquivo:
+Para INCLUDE-50, use o script específico com split fixo, pois esse dataset não possui `person_id`:
+
+```bash
+./scripts/batch/run_include50_split_all.sh
+```
+
+Esse comando usa:
+
+```text
+data/interim/include50/include50_mediapipe_with_split.csv
+```
+
+com a coluna:
+
+```text
+split = train / val / test
+```
+
+Os comandos genéricos usam o arquivo:
 
 ```text
 configs/datasets/<dataset>.env
@@ -261,11 +295,11 @@ UFOP:  5 × 4  = 20
 KSL:   20 × 19 = 380
 ```
 
-Para INCLUDE-50, depende do número de sinalizadores no seu CSV.
+Para INCLUDE-50, não use `expected-runs-per-condition` de LOPO. No protocolo com split fixo, cada condição gera 1 run, portanto são 10 runs no total: 5 subsets × 2 condições de imputação.
 
 ---
 
-## 11. Consolidar todos os datasets
+## 12. Consolidar todos os datasets
 
 Depois de gerar `summary_outer.csv` em cada pasta de relatório:
 
@@ -278,6 +312,50 @@ Saída:
 ```text
 reports/all_datasets_summary_outer.csv
 ```
+
+---
+
+## 11. INCLUDE-50 com split fixo
+
+O INCLUDE-50 usado aqui não possui `person_id`. Portanto, ele não deve ser treinado com nested LOPO.
+
+Use primeiro o CSV com split:
+
+```text
+data/interim/include50/include50_mediapipe_with_split.csv
+```
+
+Teste uma condição:
+
+```bash
+python scripts/batch/run_include50_split.py \
+  --dataset include50 \
+  --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
+  --results-dir experiments/include50_split_grid \
+  --subset 2nd \
+  --imputation true \
+  --device cuda \
+  --epochs 2 \
+  --batch-size 64 \
+  --patience 1
+```
+
+Depois rode todas as condições:
+
+```bash
+./scripts/batch/run_include50_split_all.sh
+```
+
+Esse script faz a adaptação interna:
+
+```text
+category   <- sign_id
+video_name <- sequence_id
+frame      <- frame_id
+person     <- split
+```
+
+Assim, o `Trainer` atual consegue separar treino, validação e teste sem alterar `src/training/trainer.py`.
 
 ---
 

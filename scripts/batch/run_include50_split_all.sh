@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RESULTS_DIR="experiments/include50_fixed_split_grid"
+RESULTS_DIR="experiments/include50_split_grid"
 DATA_CSV="data/interim/include50/include50_mediapipe_with_split.csv"
 
 mkdir -p "$RESULTS_DIR"
@@ -16,7 +16,7 @@ for SUBSET in "${SUBSETS[@]}"; do
     echo "INCLUDE-50 | subset=${SUBSET} | imputation=${IMPUTATION}"
     echo "========================================"
 
-    python scripts/batch/run_include50_fixed_split.py \
+    python scripts/batch/run_include50_split.py \
       --dataset include50 \
       --data-csv "$DATA_CSV" \
       --results-dir "$RESULTS_DIR" \

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fixed-split runner for INCLUDE-50.
+Split runner for INCLUDE-50.
 
 This script reuses the existing Trainer, which expects LOPO-style columns:
   category, video_name, frame, person
@@ -270,10 +270,10 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run INCLUDE-50 fixed train/val/test split.")
+    parser = argparse.ArgumentParser(description="Run INCLUDE-50 train/val/test split.")
     parser.add_argument("--dataset", default="include50")
     parser.add_argument("--data-csv", default=Path("data/interim/include50/include50_mediapipe_with_split.csv"), type=Path)
-    parser.add_argument("--results-dir", default=Path("experiments/include50_fixed_split_grid"), type=Path)
+    parser.add_argument("--results-dir", default=Path("experiments/include50_split_grid"), type=Path)
     parser.add_argument("--subset", required=True, choices=list(LANDMARK_SUBSETS.keys()))
     parser.add_argument("--imputation", required=True, type=str_to_bool)
     parser.add_argument("--resume", type=str_to_bool, default=True)
@@ -310,7 +310,7 @@ def main() -> None:
     print(f"  results_dir:  {args.results_dir}")
     print(f"  subset:       {args.subset} ({len(subset_indices(args.subset))} landmarks)")
     print(f"  imputation:   {impute_label(args.imputation)}")
-    print(f"  protocol:     fixed split train/val/test")
+    print(f"  protocol:     split train/val/test")
     print(f"  epochs:       {args.epochs}")
     print(f"  lr/wd/batch:  {args.lr} / {args.wd} / {args.batch_size}")
     print(f"  patience:     {args.patience}")
