@@ -2,32 +2,18 @@
 from __future__ import annotations
 
 import importlib
-import shutil
-import subprocess
+import os
 import sys
 from pathlib import Path
 
-
-def find_project_root() -> Path:
-    candidates = [Path.cwd(), *Path(__file__).resolve().parents]
-    for candidate in candidates:
-        if (candidate / "src").exists():
-            return candidate
-    return Path.cwd()
-
-
-PROJECT_ROOT = find_project_root()
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = PROJECT_ROOT / "src"
 EXPECTED_SUBSET_COUNTS = {
     "all": 543,
     "1st": 118,
     "2nd": 80,
-    "laines": 68,
+    "laines": 67,
     "arcanjo": 75,
-}
-DATASETS = {
-    "ksl": PROJECT_ROOT / "data" / "interim" / "ksl" / "ksl_mediapipe.csv",
-    "include50": PROJECT_ROOT / "data" / "interim" / "include50" / "include50_mediapipe.csv",
 }
 
 
@@ -78,17 +64,6 @@ def check_torch() -> None:
         print_check("torch/CUDA", False, repr(exc))
 
 
-def check_nvidia_smi() -> None:
-    if shutil.which("nvidia-smi") is None:
-        print_check("nvidia-smi", False, "comando não encontrado")
-        return
-    try:
-        out = subprocess.check_output(["nvidia-smi", "--query-gpu=name,memory.used,memory.total,utilization.gpu", "--format=csv,noheader"], text=True)
-        print_check("nvidia-smi", True, out.strip())
-    except Exception as exc:
-        print_check("nvidia-smi", False, repr(exc))
-
-
 def check_landmark_subsets() -> None:
     if str(SRC_DIR) not in sys.path:
         sys.path.insert(0, str(SRC_DIR))
@@ -105,9 +80,31 @@ def check_landmark_subsets() -> None:
         print_check("Import dos subsets", False, repr(exc))
 
 
-def check_datasets() -> None:
-    for dataset_name, csv_path in DATASETS.items():
-        print_check(f"CSV {dataset_name}", csv_path.exists(), str(csv_path))
+def read_env_file(path: Path) -> dict[str, str]:
+    out = {}
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        out[key.strip()] = value.strip().strip('"').strip("'")
+    return out
+
+
+def check_dataset_configs() -> None:
+    config_dir = PROJECT_ROOT / "configs" / "datasets"
+    print_check("Pasta configs/datasets", config_dir.exists(), str(config_dir))
+    for cfg in sorted(config_dir.glob("*.env")):
+        data = read_env_file(cfg)
+        dataset = data.get("DATASET", cfg.stem)
+        data_csv = PROJECT_ROOT / data.get("DATA_CSV", "")
+        results_dir = PROJECT_ROOT / data.get("RESULTS_DIR", "")
+        print_check(f"Config {dataset}", True, str(cfg))
+        print_check(f"CSV {dataset}", data_csv.exists(), str(data_csv))
+        results_dir.mkdir(parents=True, exist_ok=True)
+        print_check(f"Results dir {dataset}", results_dir.exists(), str(results_dir))
 
 
 def check_output_dirs() -> None:
@@ -120,21 +117,30 @@ def main() -> None:
     print("=" * 80)
     print("CHECK ENVIRONMENT - ISLR SUBSET")
     print("=" * 80)
+
     print("\n[1] Python e ambiente")
-    check_python(); check_venv()
+    check_python()
+    check_venv()
+
     print("\n[2] Caminhos")
     check_paths()
+
     print("\n[3] Pacotes principais")
     for package in ["numpy", "pandas", "sklearn", "PIL", "cv2", "tqdm", "matplotlib", "timm"]:
         check_package(package)
+
     print("\n[4] PyTorch/GPU")
-    check_torch(); check_nvidia_smi()
-    print("\n[5] Subsets de landmarks")
+    check_torch()
+
+    print("\n[5] Subsets")
     check_landmark_subsets()
-    print("\n[6] Datasets")
-    check_datasets()
+
+    print("\n[6] Configs dos datasets")
+    check_dataset_configs()
+
     print("\n[7] Pastas de saída")
     check_output_dirs()
+
     print("\n" + "=" * 80)
     print("Fim do check.")
     print("=" * 80)

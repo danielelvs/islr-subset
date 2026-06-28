@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-Batch runner for INCLUDE-50 nested LOPO experiments.
+Generic nested-LOPO batch runner for ISLR landmark CSV datasets.
 
-Runs one subset + one imputation setting at a time, with resume by fold.
-Expected project layout:
-
-.
-├── data/interim/include50/include50_mediapipe.csv
-├── experiments/
-├── scripts/batch/include50/run_batch.py
-└── src/
+This script runs one subset + one imputation setting at a time, with resume by fold.
+It is dataset-agnostic as long as the CSV has, or can be normalized to, these columns:
+  - person/signer/interpreter
+  - category/sign_id
+  - video_name/sequence_id/path
+  - frame/frame_id (optional; generated if missing)
 
 Example:
-python scripts/batch/include50/run_batch.py \
-  --dataset include50 \
-  --data-csv data/interim/include50/include50_mediapipe.csv \
-  --results-dir experiments/include50_nested_lopo_resume_grid \
+python scripts/batch/run_dataset_batch.py \
+  --dataset ksl \
+  --data-csv data/interim/ksl/ksl_mediapipe.csv \
+  --results-dir experiments/ksl_nested_lopo_resume_grid \
   --subset 2nd \
   --imputation true \
   --max-runs 10 \
@@ -26,38 +24,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Union
 
 import pandas as pd
 from tqdm import tqdm
 
-# Ensure local src is importable even after moving this file under scripts/batch/<dataset>/.
-def find_project_root() -> Path:
-    candidates = [Path.cwd(), *Path(__file__).resolve().parents]
-    for candidate in candidates:
-        if (candidate / "src").exists():
-            return candidate
-    raise FileNotFoundError(
-        "Não encontrei a raiz do projeto. Rode este script a partir da pasta do projeto "
-        "ou garanta que exista uma pasta src/."
-    )
-
-
-PROJECT_ROOT = find_project_root()
+# File location: scripts/batch/run_dataset_batch.py
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-# Imports from project. These require the local src fixes already discussed:
-# - preprocessing/landmark_subsets.py without MediaPipe import
-# - subset_laines() with 68 landmarks
 from preprocessing.landmark_subsets import SUBSETS as LANDMARK_SUBSETS, indices_to_columns
 from preprocessing.imputation import impute_by_video
 from training.trainer import Trainer
@@ -81,7 +64,7 @@ DEFAULT_METADATA_COLUMNS = [
 ]
 
 
-def str_to_bool(value: str | bool) -> bool:
+def str_to_bool(value: Union[str, bool]) -> bool:
     if isinstance(value, bool):
         return value
     value = str(value).strip().lower()
@@ -89,10 +72,10 @@ def str_to_bool(value: str | bool) -> bool:
         return True
     if value in {"false", "0", "no", "n", "nao", "não", "without", "sem"}:
         return False
-    raise argparse.ArgumentTypeError(f"Valor booleano inválido: {value}")
+    raise argparse.ArgumentTypeError("Valor booleano inválido: %s" % value)
 
 
-def parse_max_runs(value: str | None) -> int | None:
+def parse_max_runs(value: Optional[str]) -> Optional[int]:
     if value is None:
         return None
     value = str(value).strip().lower()
@@ -118,27 +101,27 @@ def strip_axis(column_name: str) -> str:
 def src_base_name_for_index(idx: int) -> str:
     cols = indices_to_columns([idx])
     if not cols:
-        raise ValueError(f"Índice de landmark inválido ou sem colunas: {idx}")
+        raise ValueError("Índice de landmark inválido ou sem colunas: %s" % idx)
     return strip_axis(cols[0])
 
 
 def numeric_aliases_for_index(idx: int) -> list[str]:
     if idx < 468:
-        return [f"face_{idx}"]
+        return ["face_%s" % idx]
     if 468 <= idx < 489:
         h = idx - 468
-        return [f"hand_0_{h}", f"hand_0_{h:02d}", f"left_hand_{h}", f"left_hand_{h:02d}"]
+        return ["hand_0_%s" % h, "hand_0_%02d" % h, "left_hand_%s" % h, "left_hand_%02d" % h]
     if 489 <= idx < 522:
         p = idx - 489
-        return [f"pose_{p}", f"pose_{p:02d}", f"body_{p}", f"body_{p:02d}"]
+        return ["pose_%s" % p, "pose_%02d" % p, "body_%s" % p, "body_%02d" % p]
     if 522 <= idx < 543:
         h = idx - 522
-        return [f"hand_1_{h}", f"hand_1_{h:02d}", f"right_hand_{h}", f"right_hand_{h:02d}"]
-    raise ValueError(f"Índice fora do intervalo MediaPipe Holistic: {idx}")
+        return ["hand_1_%s" % h, "hand_1_%02d" % h, "right_hand_%s" % h, "right_hand_%02d" % h]
+    raise ValueError("Índice fora do intervalo MediaPipe Holistic: %s" % idx)
 
 
 def expected_base_names_for_index(idx: int) -> list[str]:
-    base_names: list[str] = []
+    base_names = []
     src_base = src_base_name_for_index(idx)
     base_names.append(src_base)
 
@@ -153,10 +136,10 @@ def expected_base_names_for_index(idx: int) -> list[str]:
     return list(dict.fromkeys(base_names))
 
 
-def find_existing_column(df: pd.DataFrame, base_names: list[str], axis: str) -> str | None:
-    candidates: list[str] = []
+def find_existing_column(df: pd.DataFrame, base_names: list[str], axis: str) -> Optional[str]:
+    candidates = []
     for base in base_names:
-        candidates.extend([f"{base}_{axis}", f"{base}.{axis}", f"{base}:{axis}"])
+        candidates.extend(["%s_%s" % (base, axis), "%s.%s" % (base, axis), "%s:%s" % (base, axis)])
     for candidate in candidates:
         if candidate in df.columns:
             return candidate
@@ -166,25 +149,44 @@ def find_existing_column(df: pd.DataFrame, base_names: list[str], axis: str) -> 
 def canonical_base_name(idx: int) -> str:
     # Stable numeric output names. LopoDataset will still detect x/y/z columns.
     if idx < 468:
-        return f"face_{idx}"
+        return "face_%s" % idx
     if 468 <= idx < 489:
-        return f"hand_0_{idx - 468:02d}"
+        return "hand_0_%02d" % (idx - 468)
     if 489 <= idx < 522:
-        return f"pose_{idx - 489:02d}"
+        return "pose_%02d" % (idx - 489)
     if 522 <= idx < 543:
-        return f"hand_1_{idx - 522:02d}"
-    raise ValueError(f"Índice fora do intervalo MediaPipe Holistic: {idx}")
+        return "hand_1_%02d" % (idx - 522)
+    raise ValueError("Índice fora do intervalo MediaPipe Holistic: %s" % idx)
 
 
-def normalize_metadata(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_metadata(df: pd.DataFrame, person_col: Optional[str] = None, category_col: Optional[str] = None,
+                       video_col: Optional[str] = None, frame_col: Optional[str] = None) -> pd.DataFrame:
     df = df.copy()
+
+    explicit_renames = {}
+    if person_col and person_col in df.columns and person_col != "person":
+        explicit_renames[person_col] = "person"
+    if category_col and category_col in df.columns and category_col != "category":
+        explicit_renames[category_col] = "category"
+    if video_col and video_col in df.columns and video_col != "video_name":
+        explicit_renames[video_col] = "video_name"
+    if frame_col and frame_col in df.columns and frame_col != "frame":
+        explicit_renames[frame_col] = "frame"
+    if explicit_renames:
+        df = df.rename(columns=explicit_renames)
+
     rename_candidates = {
         "interpreter": "person",
         "signer": "person",
+        "participant_id": "person",
         "frame_id": "frame",
         "sign_id": "category",
+        "label": "category",
+        "class": "category",
         "sequence_id": "video_name",
         "path": "video_name",
+        "file": "video_name",
+        "filename": "video_name",
     }
     for old, new in rename_candidates.items():
         if old in df.columns and new not in df.columns:
@@ -194,27 +196,33 @@ def normalize_metadata(df: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(
-            f"CSV sem colunas obrigatórias {missing}. Colunas encontradas: {list(df.columns[:30])}..."
+            "CSV sem colunas obrigatórias %s. Colunas encontradas: %s..." % (missing, list(df.columns[:40]))
         )
 
     if "frame" not in df.columns:
         # fallback: preserve input order within each video
         df["frame"] = df.groupby("video_name").cumcount()
 
-    # Keep person as original value when possible, but make category consecutive int.
-    categories = sorted(df["category"].dropna().unique())
+    # Keep original class text if useful.
+    if "sign" not in df.columns:
+        df["sign"] = df["category"]
+
+    # Map categories to consecutive integers expected by the training code.
+    categories = sorted(df["category"].dropna().unique(), key=lambda x: str(x))
     df["category"] = df["category"].map({c: i for i, c in enumerate(categories)})
     return df
 
 
 def subset_indices(subset_name: str) -> list[int]:
     if subset_name not in LANDMARK_SUBSETS:
-        raise ValueError(f"Subset desconhecido: {subset_name}. Disponíveis: {list(LANDMARK_SUBSETS)}")
+        raise ValueError("Subset desconhecido: %s. Disponíveis: %s" % (subset_name, list(LANDMARK_SUBSETS)))
     return LANDMARK_SUBSETS[subset_name]()
 
 
-def prepare_subset_dataframe(raw_df: pd.DataFrame, subset: str, use_imputation: bool) -> pd.DataFrame:
-    df = normalize_metadata(raw_df)
+def prepare_subset_dataframe(raw_df: pd.DataFrame, subset: str, use_imputation: bool,
+                             person_col: Optional[str] = None, category_col: Optional[str] = None,
+                             video_col: Optional[str] = None, frame_col: Optional[str] = None) -> pd.DataFrame:
+    df = normalize_metadata(raw_df, person_col=person_col, category_col=category_col, video_col=video_col, frame_col=frame_col)
     indices = subset_indices(subset)
 
     keep_meta = [c for c in DEFAULT_METADATA_COLUMNS if c in df.columns]
@@ -223,14 +231,13 @@ def prepare_subset_dataframe(raw_df: pd.DataFrame, subset: str, use_imputation: 
             keep_meta.append(required)
 
     result = df[keep_meta].copy()
-    missing_columns: list[str] = []
+    missing_columns = []
 
     for idx in indices:
         for axis in ["x", "y", "z"]:
             source_col = find_existing_column(df, expected_base_names_for_index(idx), axis)
-            output_col = f"{canonical_base_name(idx)}_{axis}"
+            output_col = "%s_%s" % (canonical_base_name(idx), axis)
             if source_col is None:
-                # Keep shape consistent; imputation/fillna will turn this into 0.
                 result[output_col] = pd.NA
                 missing_columns.append(output_col)
             else:
@@ -239,7 +246,7 @@ def prepare_subset_dataframe(raw_df: pd.DataFrame, subset: str, use_imputation: 
     landmark_cols = [c for c in result.columns if c.endswith(("_x", "_y", "_z"))]
 
     if missing_columns:
-        print(f"[WARN] {len(missing_columns)} colunas de landmark não encontradas; serão preenchidas com 0 após imputação/fillna.")
+        print("[WARN] %d colunas de landmark não encontradas; serão preenchidas com 0 após imputação/fillna." % len(missing_columns))
         print("       Exemplos:", missing_columns[:10])
 
     if use_imputation:
@@ -247,41 +254,54 @@ def prepare_subset_dataframe(raw_df: pd.DataFrame, subset: str, use_imputation: 
     else:
         result[landmark_cols] = result[landmark_cols].fillna(0)
 
-    # Sort for deterministic sequence order.
     result = result.sort_values(["video_name", "frame"]).reset_index(drop=True)
     return result
 
 
-def load_or_create_preprocessed(
-    data_csv: Path,
-    cache_dir: Path,
-    dataset: str,
-    subset: str,
-    use_imputation: bool,
-    force: bool = False,
-) -> Path:
+def load_or_create_preprocessed(data_csv: Path, cache_dir: Path, dataset: str, subset: str, use_imputation: bool,
+                                force: bool = False, person_col: Optional[str] = None,
+                                category_col: Optional[str] = None, video_col: Optional[str] = None,
+                                frame_col: Optional[str] = None) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    output_path = cache_dir / f"{dataset}_{subset}_{impute_label(use_imputation)}.csv"
+    output_path = cache_dir / "%s_%s_%s.csv" % (dataset, subset, impute_label(use_imputation))
     if output_path.exists() and not force:
-        print(f"Usando CSV pré-processado em cache: {output_path}")
+        print("Usando CSV pré-processado em cache: %s" % output_path)
         return output_path
 
-    print(f"Lendo CSV bruto: {data_csv}")
+    print("Lendo CSV bruto: %s" % data_csv)
     raw_df = pd.read_csv(data_csv, na_values=["NaN", "nan", ""])
-    print(f"Linhas: {len(raw_df):,} | Colunas: {len(raw_df.columns):,}")
+    print("Linhas: %s | Colunas: %s" % (format(len(raw_df), ","), format(len(raw_df.columns), ",")))
 
-    processed = prepare_subset_dataframe(raw_df, subset, use_imputation)
+    processed = prepare_subset_dataframe(
+        raw_df,
+        subset,
+        use_imputation,
+        person_col=person_col,
+        category_col=category_col,
+        video_col=video_col,
+        frame_col=frame_col,
+    )
     processed.to_csv(output_path, index=False)
-    print(f"CSV pré-processado salvo: {output_path}")
-    print(f"Shape processado: {processed.shape}")
+    print("CSV pré-processado salvo: %s" % output_path)
+    print("Shape processado: %s" % (processed.shape,))
     return output_path
 
 
-def build_run_plan(df: pd.DataFrame) -> list[tuple[Any, Any]]:
+def build_run_plan(df: pd.DataFrame, protocol: str = "nested_lopo", fixed_val_person: Optional[Any] = None) -> list[tuple[Any, Any]]:
     people = sorted(df["person"].dropna().unique(), key=lambda x: str(x))
     if len(people) < 2:
-        raise ValueError(f"Nested LOPO precisa de pelo menos 2 pessoas. Encontradas: {people}")
-    return [(test_person, val_person) for test_person in people for val_person in people if val_person != test_person]
+        raise ValueError("LOPO precisa de pelo menos 2 pessoas. Encontradas: %s" % people)
+
+    if protocol == "nested_lopo":
+        return [(test_person, val_person) for test_person in people for val_person in people if val_person != test_person]
+
+    if protocol == "lopo_fixed_val":
+        if fixed_val_person is None:
+            # Deterministic fallback: for each test, first person different from test.
+            return [(test_person, next(p for p in people if p != test_person)) for test_person in people]
+        return [(test_person, fixed_val_person) for test_person in people if str(test_person) != str(fixed_val_person)]
+
+    raise ValueError("Protocolo desconhecido: %s" % protocol)
 
 
 def result_path_for(results_dir: Path, subset: str, use_imputation: bool, test_person: Any, val_person: Any) -> Path:
@@ -290,7 +310,7 @@ def result_path_for(results_dir: Path, subset: str, use_imputation: bool, test_p
         / "runs"
         / subset
         / impute_label(use_imputation)
-        / f"test={sanitize_id(test_person)}__val={sanitize_id(val_person)}"
+        / "test=%s__val=%s" % (sanitize_id(test_person), sanitize_id(val_person))
         / "result.json"
     )
 
@@ -310,10 +330,10 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run INCLUDE-50 nested LOPO batch with resume by fold.")
-    parser.add_argument("--dataset", default="include50")
+    parser = argparse.ArgumentParser(description="Run generic nested LOPO batch with resume by fold.")
+    parser.add_argument("--dataset", required=True, help="Dataset name, e.g., ksl, include50, minds, ufop.")
     parser.add_argument("--data-csv", required=True, type=Path)
-    parser.add_argument("--results-dir", default=Path("experiments/include50_nested_lopo_resume_grid"), type=Path)
+    parser.add_argument("--results-dir", required=True, type=Path)
     parser.add_argument("--subset", required=True, choices=list(LANDMARK_SUBSETS.keys()))
     parser.add_argument("--imputation", required=True, type=str_to_bool)
     parser.add_argument("--max-runs", default="10", help="Number of runs to execute now, or none/all.")
@@ -329,6 +349,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--model", default="resnet18")
     parser.add_argument("--image-method", default="Skeleton-DML")
+    parser.add_argument("--protocol", default="nested_lopo", choices=["nested_lopo", "lopo_fixed_val"])
+    parser.add_argument("--fixed-val-person", default=None, help="Used only with --protocol lopo_fixed_val.")
+    parser.add_argument("--person-col", default=None, help="Optional raw CSV column to use as person.")
+    parser.add_argument("--category-col", default=None, help="Optional raw CSV column to use as category.")
+    parser.add_argument("--video-col", default=None, help="Optional raw CSV column to use as video_name.")
+    parser.add_argument("--frame-col", default=None, help="Optional raw CSV column to use as frame.")
     args = parser.parse_args()
 
     args.results_dir.mkdir(parents=True, exist_ok=True)
@@ -336,7 +362,6 @@ def main() -> None:
     trainer_tmp_dir = args.results_dir / "_trainer_tmp_outputs"
     max_runs = parse_max_runs(args.max_runs)
 
-    # Preflight GPU check.
     try:
         import torch
         print("CUDA disponível:", torch.cuda.is_available())
@@ -348,17 +373,17 @@ def main() -> None:
         print("[WARN] Não consegui checar CUDA:", repr(exc))
 
     print("\nConfiguração:")
-    print(f"  dataset:      {args.dataset}")
-    print(f"  data_csv:     {args.data_csv}")
-    print(f"  results_dir:  {args.results_dir}")
-    print(f"  subset:       {args.subset} ({len(subset_indices(args.subset))} landmarks)")
-    print(f"  imputation:   {impute_label(args.imputation)}")
-    print(f"  protocol:     nested LOPO")
-    print(f"  epochs:       {args.epochs}")
-    print(f"  lr/wd/batch:  {args.lr} / {args.wd} / {args.batch_size}")
-    print(f"  patience:     {args.patience}")
-    print(f"  max_runs:     {max_runs}")
-    print(f"  resume:       {args.resume}\n")
+    print("  dataset:      %s" % args.dataset)
+    print("  data_csv:     %s" % args.data_csv)
+    print("  results_dir:  %s" % args.results_dir)
+    print("  subset:       %s (%s landmarks)" % (args.subset, len(subset_indices(args.subset))))
+    print("  imputation:   %s" % impute_label(args.imputation))
+    print("  protocol:     %s" % args.protocol)
+    print("  epochs:       %s" % args.epochs)
+    print("  lr/wd/batch:  %s / %s / %s" % (args.lr, args.wd, args.batch_size))
+    print("  patience:     %s" % args.patience)
+    print("  max_runs:     %s" % max_runs)
+    print("  resume:       %s\n" % args.resume)
 
     processed_csv = load_or_create_preprocessed(
         data_csv=args.data_csv,
@@ -367,31 +392,29 @@ def main() -> None:
         subset=args.subset,
         use_imputation=args.imputation,
         force=args.force_preprocess,
+        person_col=args.person_col,
+        category_col=args.category_col,
+        video_col=args.video_col,
+        frame_col=args.frame_col,
     )
     df = pd.read_csv(processed_csv)
-    run_plan = build_run_plan(df)
+    run_plan = build_run_plan(df, protocol=args.protocol, fixed_val_person=args.fixed_val_person)
 
     total = len(run_plan)
-    completed_before = sum(
-        result_path_for(args.results_dir, args.subset, args.imputation, t, v).exists()
-        for t, v in run_plan
-    )
-    failed_before = sum(
-        failed_path_for(result_path_for(args.results_dir, args.subset, args.imputation, t, v)).exists()
-        for t, v in run_plan
-    )
+    completed_before = sum(result_path_for(args.results_dir, args.subset, args.imputation, t, v).exists() for t, v in run_plan)
+    failed_before = sum(failed_path_for(result_path_for(args.results_dir, args.subset, args.imputation, t, v)).exists() for t, v in run_plan)
 
-    print(f"Plano: {total} runs para subset={args.subset}, imputation={impute_label(args.imputation)}")
-    print(f"Antes: completed={completed_before}, failed={failed_before}, pending={total - completed_before}\n")
+    print("Plano: %d runs para dataset=%s, subset=%s, imputation=%s" % (total, args.dataset, args.subset, impute_label(args.imputation)))
+    print("Antes: completed=%d, failed=%d, pending=%d\n" % (completed_before, failed_before, total - completed_before))
 
     executed_now = 0
     skipped_completed = 0
     skipped_failed = 0
     failed_now = 0
 
-    pbar = tqdm(run_plan, total=total, desc="Nested LOPO")
+    pbar = tqdm(run_plan, total=total, desc=args.protocol)
     for test_person, val_person in pbar:
-        desc = f"{args.subset} | {impute_label(args.imputation)} | test={test_person} | val={val_person}"
+        desc = "%s | %s | test=%s | val=%s" % (args.subset, impute_label(args.imputation), test_person, val_person)
         pbar.set_description(desc)
 
         final_result_path = result_path_for(args.results_dir, args.subset, args.imputation, test_person, val_person)
@@ -414,7 +437,7 @@ def main() -> None:
         run_meta = {
             "status": "running",
             "dataset": args.dataset,
-            "protocol": "nested_lopo",
+            "protocol": args.protocol,
             "subset": args.subset,
             "imputation": args.imputation,
             "test_person": test_person,
@@ -424,11 +447,25 @@ def main() -> None:
         save_json(final_running_path, run_meta)
 
         ref = (
-            f"dataset={args.dataset}__protocol=nested_lopo__subset={args.subset}"
-            f"__imputation={impute_label(args.imputation)}__model={args.model}"
-            f"__repr={args.image_method.replace('/', '-')}__epochs={args.epochs}"
-            f"__lr={args.lr:g}__wd={args.wd:g}__batch={args.batch_size}"
-            f"__test={sanitize_id(test_person)}__val={sanitize_id(val_person)}"
+            "dataset=%s__protocol=%s__subset=%s"
+            "__imputation=%s__model=%s"
+            "__repr=%s__epochs=%s"
+            "__lr=%g__wd=%g__batch=%s"
+            "__test=%s__val=%s"
+            % (
+                args.dataset,
+                args.protocol,
+                args.subset,
+                impute_label(args.imputation),
+                args.model,
+                args.image_method.replace("/", "-"),
+                args.epochs,
+                args.lr,
+                args.wd,
+                args.batch_size,
+                sanitize_id(test_person),
+                sanitize_id(val_person),
+            )
         )
 
         trainer_cfg = {
@@ -453,7 +490,7 @@ def main() -> None:
                 "horizontal_flip_prob": 0.5,
             },
             "output_dir": str(trainer_tmp_dir),
-            "save_model": False,  # used only if you patched Trainer; harmless otherwise
+            "save_model": False,
         }
 
         start = time.time()
@@ -463,7 +500,7 @@ def main() -> None:
             payload = {
                 "status": "completed",
                 "dataset": args.dataset,
-                "protocol": "nested_lopo",
+                "protocol": args.protocol,
                 "subset": args.subset,
                 "subset_landmarks": len(subset_indices(args.subset)),
                 "imputation": args.imputation,
@@ -496,14 +533,14 @@ def main() -> None:
             if final_running_path.exists():
                 final_running_path.unlink()
             executed_now += 1
-            print(f"Resultado salvo em: {final_result_path}")
+            print("Resultado salvo em: %s" % final_result_path)
         except Exception as exc:
             elapsed = time.time() - start
             failed_now += 1
             payload = {
                 "status": "failed",
                 "dataset": args.dataset,
-                "protocol": "nested_lopo",
+                "protocol": args.protocol,
                 "subset": args.subset,
                 "imputation": args.imputation,
                 "test_person": test_person,
@@ -516,23 +553,15 @@ def main() -> None:
             save_json(final_failed_path, payload)
             if final_running_path.exists():
                 final_running_path.unlink()
-            print(f"[ERRO] Run falhou: {desc}")
-            print(f"       {type(exc).__name__}: {exc}")
-            # Continue with next fold instead of killing the whole batch.
+            print("[ERRO] Run falhou: %s" % desc)
+            print("       %s: %s" % (type(exc).__name__, exc))
         finally:
-            # Remove Trainer's temporary JSON/PTH outputs to avoid filling disk.
             tmp_ref_dir = trainer_tmp_dir / ref
             if tmp_ref_dir.exists():
                 shutil.rmtree(tmp_ref_dir, ignore_errors=True)
 
-    completed_after = sum(
-        result_path_for(args.results_dir, args.subset, args.imputation, t, v).exists()
-        for t, v in run_plan
-    )
-    failed_after = sum(
-        failed_path_for(result_path_for(args.results_dir, args.subset, args.imputation, t, v)).exists()
-        for t, v in run_plan
-    )
+    completed_after = sum(result_path_for(args.results_dir, args.subset, args.imputation, t, v).exists() for t, v in run_plan)
+    failed_after = sum(failed_path_for(result_path_for(args.results_dir, args.subset, args.imputation, t, v)).exists() for t, v in run_plan)
 
     summary = {
         "executed_now": executed_now,
@@ -554,7 +583,7 @@ def main() -> None:
         },
     }
     print(json.dumps(summary, indent=2, default=str))
-    print(f"Progresso deste subset/imputação: {completed_after}/{total} ({completed_after / total * 100:.1f}%)")
+    print("Progresso deste subset/imputação: %d/%d (%.1f%%)" % (completed_after, total, completed_after / total * 100))
 
 
 if __name__ == "__main__":

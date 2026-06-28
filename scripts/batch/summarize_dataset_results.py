@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-Summarize KSL nested LOPO batch results.
+Generic summarizer for nested-LOPO ISLR batch results.
 
 Expected input:
-  experiments/ksl_nested_lopo_resume_grid/runs/<subset>/<imputation>/test=...__val=.../result.json
+  experiments/<dataset>_nested_lopo_resume_grid/runs/<subset>/<imputation>/test=...__val=.../result.json
 
-Outputs:
-  reports/ksl/ksl_nested_lopo_raw_runs.csv
-  reports/ksl/ksl_nested_lopo_summary_by_run.csv
-  reports/ksl/ksl_nested_lopo_outer_folds.csv
-  reports/ksl/ksl_nested_lopo_summary_outer.csv
-  reports/ksl/ksl_nested_lopo_pivot_f1.csv
-  reports/ksl/ksl_nested_lopo_latex_table.tex
+Example:
+python scripts/batch/summarize_dataset_results.py \
+  --dataset ksl \
+  --results-dir experiments/ksl_nested_lopo_resume_grid \
+  --reports-dir reports/ksl \
+  --expected-runs-per-condition 380
 """
 
 from __future__ import annotations
@@ -19,23 +18,14 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 
 METRIC_NAMES = ["accuracy", "precision", "recall", "f1"]
 
 
-def get_nested(data: dict[str, Any], *keys: str) -> Any:
-    current: Any = data
-    for key in keys:
-        if not isinstance(current, dict) or key not in current:
-            return None
-        current = current[key]
-    return current
-
-
-def as_float(value: Any) -> float | None:
+def as_float(value: Any) -> Optional[float]:
     if value is None or value == "":
         return None
     try:
@@ -51,7 +41,7 @@ def read_result(path: Path) -> dict[str, Any]:
     trainer = payload.get("trainer_result", {}) or {}
     metrics = payload.get("metrics", {}) or {}
 
-    row: dict[str, Any] = {
+    row = {
         "result_path": str(path),
         "status": payload.get("status"),
         "dataset": payload.get("dataset"),
@@ -78,14 +68,12 @@ def read_result(path: Path) -> dict[str, Any]:
         "finished_at": payload.get("finished_at"),
     }
 
-    # Prefer explicit metrics block, fall back to trainer_result keys.
     row["accuracy"] = as_float(metrics.get("accuracy", trainer.get("test_accuracy")))
     row["precision"] = as_float(metrics.get("precision", trainer.get("test_precision")))
     row["recall"] = as_float(metrics.get("recall", trainer.get("test_recall")))
     row["f1"] = as_float(metrics.get("f1", trainer.get("test_f1")))
 
-    # Optional training/validation metrics if Trainer produced them.
-    optional_keys = [
+    for key in [
         "best_epoch",
         "best_val_loss",
         "best_val_accuracy",
@@ -94,20 +82,18 @@ def read_result(path: Path) -> dict[str, Any]:
         "best_val_f1",
         "train_loss",
         "val_loss",
-    ]
-    for key in optional_keys:
+    ]:
         row[key] = trainer.get(key)
 
     return row
 
 
 def mean_std_table(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
-    agg_spec: dict[str, list[str]] = {metric: ["mean", "std", "count"] for metric in METRIC_NAMES}
+    agg_spec = {metric: ["mean", "std", "count"] for metric in METRIC_NAMES}
     agg_spec["elapsed_seconds"] = ["mean", "std", "sum"]
     summary = df.groupby(group_cols, dropna=False).agg(agg_spec)
     summary.columns = ["_".join(col).rstrip("_") for col in summary.columns]
-    summary = summary.reset_index()
-    return summary
+    return summary.reset_index()
 
 
 def format_mean_std(mean_value: Any, std_value: Any, decimals: int = 3) -> str:
@@ -137,42 +123,28 @@ def make_latex_table(summary_outer: pd.DataFrame) -> str:
             }
         )
 
-    out = pd.DataFrame(rows)
-    return out.to_latex(index=False, escape=False)
+    return pd.DataFrame(rows).to_latex(index=False, escape=False)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Summarize KSL nested LOPO results.")
-    parser.add_argument(
-        "--results-dir",
-        type=Path,
-        default=Path("experiments/ksl_nested_lopo_resume_grid"),
-        help="Directory containing runs/ with result.json files.",
-    )
-    parser.add_argument(
-        "--reports-dir",
-        type=Path,
-        default=Path("reports/ksl"),
-        help="Directory where CSV/TEX summaries will be written.",
-    )
-    parser.add_argument("--expected-runs-per-condition", type=int, default=380)
+    parser = argparse.ArgumentParser(description="Summarize generic nested LOPO results.")
+    parser.add_argument("--dataset", required=True)
+    parser.add_argument("--results-dir", type=Path, required=True)
+    parser.add_argument("--reports-dir", type=Path, required=True)
+    parser.add_argument("--expected-runs-per-condition", type=int, default=None)
     args = parser.parse_args()
 
     result_files = sorted((args.results_dir / "runs").glob("*/*/*/result.json"))
     if not result_files:
-        raise FileNotFoundError(f"Não encontrei result.json em: {args.results_dir / 'runs'}")
+        raise FileNotFoundError("Não encontrei result.json em: %s" % (args.results_dir / "runs"))
 
     args.reports_dir.mkdir(parents=True, exist_ok=True)
 
     raw = pd.DataFrame([read_result(path) for path in result_files])
     raw = raw.sort_values(["subset", "imputation_label", "test_person", "val_person"]).reset_index(drop=True)
 
-    # Per-run summary: every test/validation pair counts as one run.
     summary_by_run = mean_std_table(raw, ["dataset", "protocol", "subset", "subset_landmarks", "imputation", "imputation_label"])
 
-    # Outer-fold summary: first average over validation people for each test person,
-    # then compute mean/std across test people. This avoids treating the same test person
-    # as 19 fully independent samples.
     outer_folds = (
         raw.groupby([
             "dataset",
@@ -191,16 +163,13 @@ def main() -> None:
         ["dataset", "protocol", "subset", "subset_landmarks", "imputation", "imputation_label"],
     )
 
-    # Completion status by condition.
-    completed = (
-        raw.groupby(["subset", "imputation_label"], dropna=False)
-        .size()
-        .reset_index(name="completed_runs")
-    )
-    completed["expected_runs"] = args.expected_runs_per_condition
+    completed = raw.groupby(["subset", "imputation_label"], dropna=False).size().reset_index(name="completed_runs")
+    if args.expected_runs_per_condition is not None:
+        completed["expected_runs"] = args.expected_runs_per_condition
+    else:
+        completed["expected_runs"] = completed["completed_runs"].max()
     completed["progress_pct"] = completed["completed_runs"] / completed["expected_runs"] * 100
 
-    # Handy pivot focused on F1.
     pivot_f1 = summary_outer.pivot_table(
         index="subset",
         columns="imputation_label",
@@ -208,25 +177,28 @@ def main() -> None:
         aggfunc="first",
     ).reset_index()
 
-    raw_path = args.reports_dir / "ksl_nested_lopo_raw_runs.csv"
-    summary_run_path = args.reports_dir / "ksl_nested_lopo_summary_by_run.csv"
-    outer_path = args.reports_dir / "ksl_nested_lopo_outer_folds.csv"
-    summary_outer_path = args.reports_dir / "ksl_nested_lopo_summary_outer.csv"
-    progress_path = args.reports_dir / "ksl_nested_lopo_progress.csv"
-    pivot_path = args.reports_dir / "ksl_nested_lopo_pivot_f1.csv"
-    latex_path = args.reports_dir / "ksl_nested_lopo_latex_table.tex"
+    prefix = f"{args.dataset}_nested_lopo"
+    paths = {
+        "raw": args.reports_dir / f"{prefix}_raw_runs.csv",
+        "summary_by_run": args.reports_dir / f"{prefix}_summary_by_run.csv",
+        "outer_folds": args.reports_dir / f"{prefix}_outer_folds.csv",
+        "summary_outer": args.reports_dir / f"{prefix}_summary_outer.csv",
+        "progress": args.reports_dir / f"{prefix}_progress.csv",
+        "pivot_f1": args.reports_dir / f"{prefix}_pivot_f1.csv",
+        "latex": args.reports_dir / f"{prefix}_latex_table.tex",
+    }
 
-    raw.to_csv(raw_path, index=False)
-    summary_by_run.to_csv(summary_run_path, index=False)
-    outer_folds.to_csv(outer_path, index=False)
-    summary_outer.to_csv(summary_outer_path, index=False)
-    completed.to_csv(progress_path, index=False)
-    pivot_f1.to_csv(pivot_path, index=False)
-    latex_path.write_text(make_latex_table(summary_outer))
+    raw.to_csv(paths["raw"], index=False)
+    summary_by_run.to_csv(paths["summary_by_run"], index=False)
+    outer_folds.to_csv(paths["outer_folds"], index=False)
+    summary_outer.to_csv(paths["summary_outer"], index=False)
+    completed.to_csv(paths["progress"], index=False)
+    pivot_f1.to_csv(paths["pivot_f1"], index=False)
+    paths["latex"].write_text(make_latex_table(summary_outer))
 
     print("Arquivos gerados:")
-    for path in [raw_path, summary_run_path, outer_path, summary_outer_path, progress_path, pivot_path, latex_path]:
-        print(f"- {path}")
+    for path in paths.values():
+        print("- %s" % path)
 
     print("\nProgresso por condição:")
     print(completed.to_string(index=False))
