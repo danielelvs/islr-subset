@@ -48,7 +48,10 @@ configs/
 ## 1. Instalar dependências no Python 3.8
 
 ```bash
+python -m venv venv
 source venv/bin/activate
+python -m pip install pip --upgrade
+# python -m pip install numpy opencv-python wheel testresources tensorflow seaborn matplotlib scikit-learn torch torchvision torchaudio xgboost tqdm scipy requests Pillow pydicom autopep8
 python -m pip install -r requirements-batch-py38.txt
 ```
 
@@ -258,6 +261,12 @@ Para sair sem parar:
 
 ```text
 Ctrl+B, depois d
+```
+
+ou
+
+```bash
+tmux detach-client -t minds
 ```
 
 Para voltar:
