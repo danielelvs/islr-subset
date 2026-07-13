@@ -10,9 +10,10 @@ Each function returns a list of global holistic indices (0-542):
 """
 
 import numpy as np
-# import mediapipe as mp
 
-import numpy as np
+# import mediapipe as mp
+# HAND_LANDMARKS = [lm.name.lower() for lm in mp.solutions.hands.HandLandmark]
+# POSE_LANDMARKS = [lm.name.lower() for lm in mp.solutions.pose.PoseLandmark]
 
 HAND_LANDMARKS = [
     "wrist",
@@ -72,10 +73,6 @@ POSE_LANDMARKS = [
     "left_foot_index",
     "right_foot_index",
 ]
-
-# HAND_LANDMARKS = [lm.name.lower() for lm in mp.solutions.hands.HandLandmark]
-# POSE_LANDMARKS = [lm.name.lower() for lm in mp.solutions.pose.PoseLandmark]
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Subset functions

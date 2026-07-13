@@ -383,3 +383,198 @@ Estrutura pensada para rodar datasets diferentes com o mesmo batch genérico.
 - `preprocessing/`: validação/preparação de CSVs.
 - `analysis/`: consolidação/análise após os resultados.
 - `utils/`: inspeções rápidas de GPU, resultados e JSONs.
+
+## Speed Evaluation / Checkpoint Evaluation
+
+O script `scripts/analysis/evaluate_checkpoint_speed.py` avalia um checkpoint treinado (`.pth` ou `.pt`) e mede tanto as métricas de classificação quanto o tempo de inferência.
+
+Ele calcula:
+
+- Accuracy
+- Precision weighted
+- Recall weighted
+- F1-score weighted
+- Tempo total de predição
+- Tempo médio por amostra
+- Samples per second (SPS)
+- Estatísticas de tempo por batch
+- Matriz de confusão opcional
+
+Por padrão, o script processa os dados em memória para evitar criar CSVs intermediários grandes. Use `--cache-preprocessed` apenas se houver espaço em disco suficiente.
+
+---
+
+### 1. Pré-requisitos
+
+Ative o ambiente virtual e configure o `PYTHONPATH`:
+
+```bash
+cd /home/danielevs/islr-subset
+source venv/bin/activate
+export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
+```
+
+Confira se CUDA está disponível:
+
+```bash
+python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda:", torch.version.cuda)
+print("cuda available:", torch.cuda.is_available())
+print("gpu:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
+PY
+```
+
+---
+
+### 2. Encontrar checkpoints disponíveis
+
+O speed evaluation precisa de um modelo salvo. Para procurar checkpoints:
+
+```bash
+find experiments -name "*.pth" -o -name "*.pt"
+```
+
+Se nenhum arquivo aparecer, significa que os experimentos foram executados sem salvar o modelo. Nesse caso, é necessário treinar novamente uma condição com salvamento de checkpoint habilitado.
+
+---
+
+### 3. Avaliação do INCLUDE-50
+
+O INCLUDE-50 não possui identificador de pessoa/sinalizador. Portanto, a avaliação usa a coluna `split`.
+
+Para avaliar o conjunto de teste:
+
+```bash
+python scripts/analysis/evaluate_checkpoint_speed.py \
+  --dataset include50 \
+  --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
+  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
+  --subset 2nd \
+  --imputation true \
+  --category-col sign_id \
+  --video-col sequence_id \
+  --frame-col frame_id \
+  --person-col split \
+  --eval-person test \
+  --device cuda \
+  --batch-size 1 \
+  --save-confusion-matrix
+```
+
+Nesse caso, o script interpreta:
+
+```text
+category   ← sign_id
+video_name ← sequence_id
+frame      ← frame_id
+person     ← split
+```
+
+Assim:
+
+```text
+split == test
+```
+
+é usado como conjunto de avaliação.
+
+---
+
+### 4. Avaliação de datasets com LOPO: KSL, MINDS e UFOP
+
+Para datasets com identificador de pessoa/sinalizador, o script deve avaliar a mesma pessoa usada como teste no fold do checkpoint.
+
+Exemplo geral:
+
+```bash
+python scripts/analysis/evaluate_checkpoint_speed.py \
+  --dataset ksl \
+  --data-csv data/interim/ksl/ksl_mediapipe.csv \
+  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
+  --subset 2nd \
+  --imputation true \
+  --category-col sign_id \
+  --video-col sequence_id \
+  --frame-col frame_id \
+  --person-col person \
+  --eval-person ID_DA_PESSOA_TESTE \
+  --device cuda \
+  --batch-size 1 \
+  --save-confusion-matrix
+```
+
+Se o checkpoint foi treinado em um fold salvo como:
+
+```text
+test=3__val=7
+```
+
+então a avaliação deve usar:
+
+```bash
+--eval-person 3
+```
+
+Para MINDS ou UFOP, ajuste os nomes das colunas conforme o CSV. Por exemplo, se o CSV já usa `category`, `video_name`, `frame` e `person`:
+
+```bash
+python scripts/analysis/evaluate_checkpoint_speed.py \
+  --dataset minds \
+  --data-csv data/interim/minds/minds_mediapipe.csv \
+  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
+  --subset 2nd \
+  --imputation true \
+  --category-col category \
+  --video-col video_name \
+  --frame-col frame \
+  --person-col person \
+  --eval-person ID_DA_PESSOA_TESTE \
+  --device cuda \
+  --batch-size 1 \
+  --save-confusion-matrix
+```
+
+---
+
+### 5. Saídas geradas
+
+Por padrão, os resultados são salvos em:
+
+```text
+reports/speed/<dataset>_<subset>_<imputation>_<timestamp>/
+```
+
+A pasta contém:
+
+```text
+speed_eval_results.json
+confusion_matrix.png
+```
+
+A matriz de confusão só é salva quando a opção abaixo é usada:
+
+```bash
+--save-confusion-matrix
+```
+
+---
+
+### 6. Observações importantes
+
+Use `--batch-size 1` para medir latência por amostra de forma mais direta.
+
+Use batches maiores apenas se o objetivo for medir throughput, ou seja, quantas amostras por segundo o modelo processa em lote.
+
+O script executa warmup antes da medição para reduzir instabilidade inicial da GPU. O padrão é:
+
+```bash
+--warmup-iters 20
+```
+
+Para evitar uso extra de disco, o script não salva o CSV pré-processado por padrão. Caso queira reutilizar o mesmo pré-processamento em várias avaliações e tenha espaço disponível, use:
+
+```bash
+--cache-preprocessed
+```

@@ -4,7 +4,7 @@ from torchvision.models import resnet50
 from models.base_model import BaseModel
 
 
-class Resnet50Model(BaseModel):  # FIX: original had class named Resnet18Model here
+class Resnet50Model(BaseModel):
     name = "resnet50"
     image_size = (224, 224)
 
