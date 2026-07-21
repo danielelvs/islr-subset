@@ -1,0 +1,10 @@
+{
+  "status": "running",
+  "dataset": "ksl",
+  "protocol": "nested_lopo",
+  "subset": "all",
+  "imputation": true,
+  "test_person": "1",
+  "val_person": "0",
+  "started_at": "2026-07-14T22:43:46.555568"
+}

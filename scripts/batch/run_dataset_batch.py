@@ -263,7 +263,7 @@ def load_or_create_preprocessed(data_csv: Path, cache_dir: Path, dataset: str, s
                                 category_col: Optional[str] = None, video_col: Optional[str] = None,
                                 frame_col: Optional[str] = None) -> Path:
     cache_dir.mkdir(parents=True, exist_ok=True)
-    output_path = cache_dir / "%s_%s_%s.csv" % (dataset, subset, impute_label(use_imputation))
+    output_path = cache_dir / f"{dataset}_{subset}_{impute_label(use_imputation)}.csv"
     if output_path.exists() and not force:
         print("Usando CSV pré-processado em cache: %s" % output_path)
         return output_path
@@ -310,7 +310,7 @@ def result_path_for(results_dir: Path, subset: str, use_imputation: bool, test_p
         / "runs"
         / subset
         / impute_label(use_imputation)
-        / "test=%s__val=%s" % (sanitize_id(test_person), sanitize_id(val_person))
+        / f"test={sanitize_id(test_person)}__val={sanitize_id(val_person)}"
         / "result.json"
     )
 
