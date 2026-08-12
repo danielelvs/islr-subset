@@ -6,8 +6,8 @@ from representations.base_representation import BaseRepresentation
 class SlDMLRepresentation(BaseRepresentation):
     """
     SL-DML encoding: concatenate x, y, z channels and normalize to [0, 1].
-    Input shape: (n_landmarks, n_frames).
-    Output shape: (n_landmarks * 3, n_frames).
+    Input shape: ``(n_landmarks, n_frames)``.
+    Output shape: ``(n_landmarks, 3 * n_frames)``.
     """
 
     name = "SL-DML"

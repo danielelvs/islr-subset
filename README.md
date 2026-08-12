@@ -1,22 +1,72 @@
-# ISLR Generic Dataset Batch Scripts
+QUANDO JA TEM A EXECUCAO, NAO DEVE FAZER O PREPROCESSING (INTERPOLATION/CRIAR CSV) [OPCIONAL?]
 
-Este bundle reorganiza os scripts para rodar **qualquer dataset** que esteja no mesmo formato geral de CSV de landmarks MediaPipe.
+# ISLR Landmark Subset Experiments
 
-Exemplos já configurados:
+This repository implements an isolated sign language recognition (ISLR) pipeline based on MediaPipe Holistic landmarks, landmark subset selection, optional spline interpolation, Skeleton-DML image encoding, and image classification models such as ResNet-18.
 
-- `ksl`
-- `include50`
-- `minds`
-- `ufop`
+The project supports two evaluation protocols:
 
-A ideia é usar **um batch Python genérico** e trocar apenas o arquivo de configuração do dataset.
+- **Nested LOPO** for datasets with signer identifiers: MINDS-Libras, LIBRAS-UFOP, and KSL.
+- **Fixed train/validation/test split** for INCLUDE-50, because the available version does not provide a reliable signer identifier.
 
----
-
-## Estrutura
+## Pipeline
 
 ```text
+Raw videos or landmark CSV
+        ↓
+MediaPipe Holistic landmarks
+        ↓
+Landmark subset selection
+        ↓
+Optional per-video interpolation
+        ↓
+Skeleton-DML image representation
+        ↓
+Image classifier
+        ↓
+Accuracy, precision, recall, F1-score, and speed metrics
+```
+
+## Landmark subsets
+
+| Subset    |                Landmarks | Description                                                              |
+| --------- | -----------------------: | ------------------------------------------------------------------------ |
+| `all`     |                      543 | Full MediaPipe Holistic output                                           |
+| `1st`     |                      118 | Adapted from the first-place Google ASL Signs solution                   |
+| `2nd`     |                       80 | Adapted from the second-place Google ASL Signs solution                  |
+| `laines`  | 67 source / 68 effective | Selected face, upper-body pose, both hands, and a derived chest midpoint |
+| `arcanjo` |                       75 | Full pose and both hands, without face landmarks                         |
+
+## Repository structure
+
+```text
+configs/
+└── datasets/
+    ├── include50.env
+    ├── ksl.env
+    ├── minds.env
+    └── ufop.env
+
+data/
+├── raw/
+├── interim/
+└── processed/
+
+notebooks/
+├── include50_mediapipe_extraction.ipynb
+├── ksl_mediapipe_extraction.ipynb
+├── pipeline.ipynb
+└── ufop_mediapipe_extraction.ipynb
+
 scripts/
+├── 01_extract_landmarks.py
+├── 02_filter_landmarks.py
+├── 03_train.py
+├── 04_show_results.py
+├── 05_latency_benchmark.py
+├── analysis/
+│   ├── evaluate_checkpoint_speed.py
+│   └── summarize_all_datasets.py
 ├── batch/
 │   ├── run_dataset_batch.py
 │   ├── run_dataset_all.sh
@@ -24,135 +74,198 @@ scripts/
 │   ├── run_include50_split.py
 │   ├── run_include50_split_all.sh
 │   └── summarize_dataset_results.py
-├── setup/
-│   └── check_environment.py
 ├── preprocessing/
 │   └── validate_dataset_csv.py
-├── analysis/
-│   └── summarize_all_datasets.py
+├── setup/
+│   └── check_environment.py
 └── utils/
     ├── check_gpu_usage.py
     ├── count_result_files.py
     └── inspect_result_json.py
 
-configs/
-└── datasets/
-    ├── ksl.env
-    ├── include50.env
-    ├── minds.env
-    └── ufop.env
+src/
+├── datasets/
+├── extraction/
+├── models/
+├── preprocessing/
+├── representations/
+└── training/
+
+tests/
+└── test_core.py
 ```
 
----
+## 1. Environment setup
 
-## 1. Instalar dependências no Python 3.8
+Python 3.10 is recommended. The pinned PyTorch version used by this project should not be installed in a Python 3.12 virtual environment.
 
 ```bash
-python -m venv venv
+cd /path/to/islr-subset
+
+/usr/bin/python3.10 -m venv venv
 source venv/bin/activate
-python -m pip install pip --upgrade
-# python -m pip install numpy opencv-python wheel testresources tensorflow seaborn matplotlib scikit-learn torch torchvision torchaudio xgboost tqdm scipy requests Pillow pydicom autopep8
-python -m pip install -r requirements-batch-py38.txt
+
+python --version
+python -m pip install --upgrade pip setuptools wheel
 ```
 
-Se o PyTorch com CUDA não instalar corretamente pelo requirements, instale separadamente:
+Install PyTorch with CUDA support. The following command uses the CUDA 11.8 wheel index:
 
 ```bash
-python -m pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
+python -m pip install --no-cache-dir \
+  torch==2.0.1 torchvision==0.15.2 \
+  --index-url https://download.pytorch.org/whl/cu118
 ```
 
----
-
-## 2. Checar ambiente
-
-Na raiz do projeto:
+Install the remaining training dependencies:
 
 ```bash
-source venv/bin/activate
+python -m pip install --no-cache-dir -r requirements-training-py310.txt
+```
+
+For MediaPipe video extraction, install the extraction dependencies instead of `opencv-python-headless`:
+
+```bash
+python -m pip uninstall -y opencv-python-headless
+python -m pip install --no-cache-dir -r requirements-extraction-py310.txt
+```
+
+Set the source path for the current shell:
+
+```bash
 export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
+```
+
+### Verify the environment
+
+```bash
 python scripts/setup/check_environment.py
 ```
 
-O ideal é ver:
+The subset checks should report:
 
 ```text
-CUDA disponível no PyTorch: OK
-Subset all: encontrado=543
-Subset 1st: encontrado=118
-Subset 2nd: encontrado=80
-Subset laines: encontrado=67
-Subset arcanjo: encontrado=75
+all:     543
+1st:     118
+2nd:      80
+laines:   67
+arcanjo:  75
 ```
 
----
-
-## 3. Configurar um dataset
-
-Cada dataset tem um `.env` em:
-
-```text
-configs/datasets/<dataset>.env
-```
-
-Exemplo para KSL:
+Check the GPU directly:
 
 ```bash
-DATASET="ksl"
-DATA_CSV="data/interim/ksl/ksl_mediapipe.csv"
-RESULTS_DIR="experiments/ksl_nested_lopo_resume_grid"
-REPORTS_DIR="reports/ksl"
-SUBSETS="2nd arcanjo laines 1st all"
-IMPUTATIONS="true false"
-PROTOCOL="nested_lopo"
-EPOCHS="30"
-PATIENCE="5"
-BATCH_SIZE="64"
-LR="0.0001"
-WD="0.0001"
-DEVICE="cuda"
-MAX_RUNS="none"
+python scripts/utils/check_gpu_usage.py
 ```
 
-Para testar MINDS ou UFOP, edite:
+Run the core regression tests:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## 2. Dataset protocols
+
+### MINDS-Libras, LIBRAS-UFOP, and KSL
+
+These datasets use signer-independent evaluation with nested leave-one-person-out validation:
 
 ```text
-configs/datasets/minds.env
-configs/datasets/ufop.env
+one signer for testing
+one different signer for validation
+all remaining signers for training
 ```
 
-e garanta que os CSVs existam nos caminhos configurados.
+For `n` signers, each subset/imputation condition contains `n × (n - 1)` runs.
 
----
+| Dataset      | Signers | Runs per condition |
+| ------------ | ------: | -----------------: |
+| MINDS-Libras |      12 |                132 |
+| LIBRAS-UFOP  |       5 |                 20 |
+| KSL          |      20 |                380 |
 
-## 4. Validar CSV antes de treinar
+### INCLUDE-50
+
+INCLUDE-50 uses the fixed split stored in the CSV column `split`:
+
+```text
+train → training
+val   → validation
+test  → testing
+```
+
+All frames from the same `sequence_id` must remain in the same split. Do not use `sample_id` as a signer proxy.
+
+Expected input file:
+
+```text
+data/interim/include50/include50_mediapipe_with_split.csv
+```
+
+## 3. Validate a landmark CSV
 
 ```bash
 python scripts/preprocessing/validate_dataset_csv.py \
-  --data-csv data/interim/minds/minds_mediapipe.csv
+  --data-csv data/interim/ksl/ksl_mediapipe.csv
 ```
 
-O script verifica se existem colunas equivalentes a:
-
-- `person`
-- `category`
-- `video_name`
-- `frame`
-- colunas de landmarks com sufixos `_x`, `_y`, `_z`
-
-Caso seu CSV use nomes diferentes, configure no `.env`:
+For INCLUDE-50:
 
 ```bash
-PERSON_COL="participant_id"
-CATEGORY_COL="sign_id"
-VIDEO_COL="sequence_id"
-FRAME_COL="frame_id"
+python scripts/preprocessing/validate_dataset_csv.py \
+  --data-csv data/interim/include50/include50_mediapipe_with_split.csv
 ```
 
----
+The validator looks for metadata aliases and coordinate columns ending in `_x`, `_y`, and `_z`.
 
-## 5. Teste pequeno de um dataset
+## 4. Landmark extraction
 
-Exemplo com KSL:
+Example for MINDS-Libras with MediaPipe:
+
+```bash
+python scripts/01_extract_landmarks.py \
+  --dataset minds \
+  --extractor mediapipe \
+  --input-dir data/raw \
+  --output-dir data/interim
+```
+
+Example for LIBRAS-UFOP:
+
+```bash
+python scripts/01_extract_landmarks.py \
+  --dataset ufop \
+  --extractor mediapipe \
+  --input-dir data/raw \
+  --output-dir data/interim
+```
+
+Dataset-specific extraction notebooks are available under `notebooks/` for KSL, INCLUDE-50, and LIBRAS-UFOP.
+
+## 5. Filter landmarks and apply interpolation
+
+```bash
+python scripts/02_filter_landmarks.py \
+  --datasets minds ufop \
+  --subsets all 1st 2nd laines arcanjo
+```
+
+Run an ablation without interpolation:
+
+```bash
+python scripts/02_filter_landmarks.py \
+  --datasets minds \
+  --subsets 2nd \
+  --no-imputation
+```
+
+Interpolation is performed independently within each video. Cubic interpolation is used when at least four valid points are available; otherwise linear interpolation is used. The maximum interpolation gap is five consecutive frames in either direction.
+
+## 6. Small training tests
+
+Always run a short test before launching the full grid.
+
+### Nested LOPO example
 
 ```bash
 python scripts/batch/run_dataset_batch.py \
@@ -161,296 +274,175 @@ python scripts/batch/run_dataset_batch.py \
   --results-dir experiments/ksl_nested_lopo_resume_grid \
   --subset 2nd \
   --imputation true \
-  --max-runs 2 \
+  --max-runs 1 \
+  --epochs 2 \
+  --patience 1 \
+  --batch-size 64 \
   --device cuda
 ```
 
-Exemplo com MINDS:
-
-```bash
-python scripts/batch/run_dataset_batch.py \
-  --dataset minds \
-  --data-csv data/interim/minds/minds_mediapipe.csv \
-  --results-dir experiments/minds_nested_lopo_resume_grid \
-  --subset 2nd \
-  --imputation true \
-  --max-runs 2 \
-  --device cuda
-```
-
-Exemplo com INCLUDE-50, usando split fixo:
+### INCLUDE-50 fixed split example
 
 ```bash
 python scripts/batch/run_include50_split.py \
-  --dataset include50 \
   --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
   --results-dir experiments/include50_split_grid \
   --subset 2nd \
   --imputation true \
-  --device cuda \
   --epochs 2 \
+  --patience 1 \
   --batch-size 64 \
-  --patience 1
+  --device cuda
 ```
 
----
+## 7. Run all conditions
 
-## 6. Rodar todas as condições de um dataset
+### KSL, MINDS-Libras, or LIBRAS-UFOP
+
+Edit the corresponding file under `configs/datasets/`, then run:
 
 ```bash
 ./scripts/batch/run_dataset_all.sh ksl
-```
-
-Ou:
-
-```bash
 ./scripts/batch/run_dataset_all.sh minds
 ./scripts/batch/run_dataset_all.sh ufop
 ```
 
-Para INCLUDE-50, use o script específico com split fixo, pois esse dataset não possui `person_id`:
+Run only the interpolation-enabled conditions:
 
 ```bash
+./scripts/batch/run_dataset_imputation_only.sh ksl
+```
+
+### INCLUDE-50
+
+```bash
+chmod +x scripts/batch/run_include50_split_all.sh
 ./scripts/batch/run_include50_split_all.sh
 ```
 
-Esse comando usa:
+The INCLUDE-50 grid contains ten experiments:
 
 ```text
-data/interim/include50/include50_mediapipe_with_split.csv
+5 subsets × 2 interpolation conditions = 10 runs
 ```
 
-com a coluna:
+By default, batch scripts do not save model checkpoints because thousands of LOPO checkpoints can consume substantial disk space. They also keep preprocessed landmark data in memory instead of writing one large cache CSV per subset/imputation condition.
 
-```text
-split = train / val / test
-```
-
-Os comandos genéricos usam o arquivo:
-
-```text
-configs/datasets/<dataset>.env
-```
-
----
-
-## 7. Rodar somente com imputação
-
-Como no artigo os resultados principais são apresentados com imputação, você pode rodar somente essa condição:
+To save checkpoints, set this in the dataset configuration:
 
 ```bash
-./scripts/batch/run_dataset_imputation_only.sh minds
+SAVE_MODELS="true"
 ```
 
-Isso usa os subsets configurados, mas força:
+For INCLUDE-50, saving all checkpoints means one checkpoint per condition. For nested LOPO datasets, it means one checkpoint per fold.
+
+To persist preprocessed CSV files for faster restarts, enable this only when sufficient disk space is available:
+
+```bash
+CACHE_PREPROCESSED="true"
+```
+
+The default is `false`. Existing caches under `experiments/<dataset>/preprocessed/` can be removed without deleting trained results.
+
+## 8. Run experiments in tmux
+
+```bash
+tmux new -s include50
+```
+
+Inside tmux:
+
+```bash
+cd /path/to/islr-subset
+source venv/bin/activate
+export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
+./scripts/batch/run_include50_split_all.sh
+```
+
+Detach without stopping the process:
 
 ```text
-IMPUTATIONS=true
+Ctrl+B, then D
 ```
 
----
-
-## 8. Usar tmux
+Reattach:
 
 ```bash
-tmux new -s minds
-./scripts/batch/run_dataset_all.sh minds
+tmux attach -t include50
 ```
 
-Para sair sem parar:
+## 9. Inspect progress
 
-```text
-Ctrl+B, depois d
-```
-
-ou
-
-```bash
-tmux detach-client -t minds
-```
-
-Para voltar:
-
-```bash
-tmux attach -t minds
-```
-
----
-
-## 9. Contar resultados
+Count result files:
 
 ```bash
 python scripts/utils/count_result_files.py \
-  --results-dir experiments/minds_nested_lopo_resume_grid
+  --results-dir experiments/ksl_nested_lopo_resume_grid
 ```
 
----
+Inspect one result:
 
-## 10. Sumarizar resultados
+```bash
+python scripts/utils/inspect_result_json.py \
+  experiments/ksl_nested_lopo_resume_grid/runs/2nd/with_imputation/test=0__val=1/result.json
+```
+
+## 10. Summarize results
+
+### Nested LOPO
 
 ```bash
 python scripts/batch/summarize_dataset_results.py \
-  --dataset minds \
-  --results-dir experiments/minds_nested_lopo_resume_grid \
-  --reports-dir reports/minds \
-  --expected-runs-per-condition 132
+  --dataset ksl \
+  --results-dir experiments/ksl_nested_lopo_resume_grid \
+  --reports-dir reports/ksl \
+  --expected-runs-per-condition 380
 ```
 
-Expected runs por condição no protocolo nested LOPO:
+### INCLUDE-50 fixed split
 
-```text
-MINDS: 12 × 11 = 132
-UFOP:  5 × 4  = 20
-KSL:   20 × 19 = 380
+```bash
+python scripts/batch/summarize_dataset_results.py \
+  --dataset include50 \
+  --results-dir experiments/include50_split_grid \
+  --reports-dir reports/include50 \
+  --expected-runs-per-condition 1
 ```
 
-Para INCLUDE-50, não use `expected-runs-per-condition` de LOPO. No protocolo com split fixo, cada condição gera 1 run, portanto são 10 runs no total: 5 subsets × 2 condições de imputação.
-
----
-
-## 12. Consolidar todos os datasets
-
-Depois de gerar `summary_outer.csv` em cada pasta de relatório:
+Combine all dataset summaries:
 
 ```bash
 python scripts/analysis/summarize_all_datasets.py
 ```
 
-Saída:
+## 11. Checkpoint speed evaluation
 
-```text
-reports/all_datasets_summary_outer.csv
-```
+The speed evaluation script reports both:
 
----
+- **End-to-end timing**, including dataset loading for each sample, Skeleton-DML generation, tensor transfer, and model inference.
+- **Model forward timing**, measured around the model call with CUDA synchronization.
 
-## 11. INCLUDE-50 com split fixo
+Use a batch size of 1 for latency measurements. Use a larger batch size only when measuring throughput.
 
-O INCLUDE-50 usado aqui não possui `person_id`. Portanto, ele não deve ser treinado com nested LOPO.
-
-Use primeiro o CSV com split:
-
-```text
-data/interim/include50/include50_mediapipe_with_split.csv
-```
-
-Teste uma condição:
+### Find available checkpoints
 
 ```bash
-python scripts/batch/run_include50_split.py \
-  --dataset include50 \
-  --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
-  --results-dir experiments/include50_split_grid \
-  --subset 2nd \
-  --imputation true \
-  --device cuda \
-  --epochs 2 \
-  --batch-size 64 \
-  --patience 1
+find experiments -type f \( -name "*.pth" -o -name "*.pt" \)
 ```
 
-Depois rode todas as condições:
+If no checkpoint is found, rerun the selected condition with:
 
 ```bash
-./scripts/batch/run_include50_split_all.sh
+--save-model true
 ```
 
-Esse script faz a adaptação interna:
-
-```text
-category   <- sign_id
-video_name <- sequence_id
-frame      <- frame_id
-person     <- split
-```
-
-Assim, o `Trainer` atual consegue separar treino, validação e teste sem alterar `src/training/trainer.py`.
-
----
-
-## Observação importante
-
-O script genérico assume que os datasets já foram convertidos para CSV de landmarks compatível com o pipeline. Ele **não extrai landmarks de vídeo**. Para treino batch, o MediaPipe não precisa estar instalado se o arquivo `src/preprocessing/landmark_subsets.py` já não depender de `import mediapipe`.
-
---
-
-# Scripts
-
-Estrutura pensada para rodar datasets diferentes com o mesmo batch genérico.
-
-- `batch/`: execução e sumarização de experimentos.
-- `setup/`: checagem de ambiente.
-- `preprocessing/`: validação/preparação de CSVs.
-- `analysis/`: consolidação/análise após os resultados.
-- `utils/`: inspeções rápidas de GPU, resultados e JSONs.
-
-## Speed Evaluation / Checkpoint Evaluation
-
-O script `scripts/analysis/evaluate_checkpoint_speed.py` avalia um checkpoint treinado (`.pth` ou `.pt`) e mede tanto as métricas de classificação quanto o tempo de inferência.
-
-Ele calcula:
-
-- Accuracy
-- Precision weighted
-- Recall weighted
-- F1-score weighted
-- Tempo total de predição
-- Tempo médio por amostra
-- Samples per second (SPS)
-- Estatísticas de tempo por batch
-- Matriz de confusão opcional
-
-Por padrão, o script processa os dados em memória para evitar criar CSVs intermediários grandes. Use `--cache-preprocessed` apenas se houver espaço em disco suficiente.
-
----
-
-### 1. Pré-requisitos
-
-Ative o ambiente virtual e configure o `PYTHONPATH`:
-
-```bash
-cd /home/danielevs/islr-subset
-source venv/bin/activate
-export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
-```
-
-Confira se CUDA está disponível:
-
-```bash
-python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda:", torch.version.cuda)
-print("cuda available:", torch.cuda.is_available())
-print("gpu:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
-PY
-```
-
----
-
-### 2. Encontrar checkpoints disponíveis
-
-O speed evaluation precisa de um modelo salvo. Para procurar checkpoints:
-
-```bash
-find experiments -name "*.pth" -o -name "*.pt"
-```
-
-Se nenhum arquivo aparecer, significa que os experimentos foram executados sem salvar o modelo. Nesse caso, é necessário treinar novamente uma condição com salvamento de checkpoint habilitado.
-
----
-
-### 3. Avaliação do INCLUDE-50
-
-O INCLUDE-50 não possui identificador de pessoa/sinalizador. Portanto, a avaliação usa a coluna `split`.
-
-Para avaliar o conjunto de teste:
+### INCLUDE-50
 
 ```bash
 python scripts/analysis/evaluate_checkpoint_speed.py \
   --dataset include50 \
   --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
-  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
+  --checkpoint-path experiments/include50_split_grid/runs/2nd/with_imputation/fixed_split/best_model.pth \
   --subset 2nd \
   --imputation true \
   --category-col sign_id \
@@ -463,118 +455,62 @@ python scripts/analysis/evaluate_checkpoint_speed.py \
   --save-confusion-matrix
 ```
 
-Nesse caso, o script interpreta:
+### LOPO dataset
 
-```text
-category   ← sign_id
-video_name ← sequence_id
-frame      ← frame_id
-person     ← split
-```
-
-Assim:
-
-```text
-split == test
-```
-
-é usado como conjunto de avaliação.
-
----
-
-### 4. Avaliação de datasets com LOPO: KSL, MINDS e UFOP
-
-Para datasets com identificador de pessoa/sinalizador, o script deve avaliar a mesma pessoa usada como teste no fold do checkpoint.
-
-Exemplo geral:
+The evaluation person must match the test signer used to train the checkpoint.
 
 ```bash
 python scripts/analysis/evaluate_checkpoint_speed.py \
   --dataset ksl \
   --data-csv data/interim/ksl/ksl_mediapipe.csv \
-  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
+  --checkpoint-path experiments/ksl_nested_lopo_resume_grid/runs/2nd/with_imputation/test=3__val=7/best_model.pth \
   --subset 2nd \
   --imputation true \
   --category-col sign_id \
   --video-col sequence_id \
   --frame-col frame_id \
-  --person-col person \
-  --eval-person ID_DA_PESSOA_TESTE \
+  --person-col interpreter \
+  --eval-person 3 \
   --device cuda \
   --batch-size 1 \
   --save-confusion-matrix
 ```
 
-Se o checkpoint foi treinado em um fold salvo como:
-
-```text
-test=3__val=7
-```
-
-então a avaliação deve usar:
-
-```bash
---eval-person 3
-```
-
-Para MINDS ou UFOP, ajuste os nomes das colunas conforme o CSV. Por exemplo, se o CSV já usa `category`, `video_name`, `frame` e `person`:
-
-```bash
-python scripts/analysis/evaluate_checkpoint_speed.py \
-  --dataset minds \
-  --data-csv data/interim/minds/minds_mediapipe.csv \
-  --checkpoint-path CAMINHO/DO/CHECKPOINT.pth \
-  --subset 2nd \
-  --imputation true \
-  --category-col category \
-  --video-col video_name \
-  --frame-col frame \
-  --person-col person \
-  --eval-person ID_DA_PESSOA_TESTE \
-  --device cuda \
-  --batch-size 1 \
-  --save-confusion-matrix
-```
-
----
-
-### 5. Saídas geradas
-
-Por padrão, os resultados são salvos em:
+Outputs are stored under:
 
 ```text
 reports/speed/<dataset>_<subset>_<imputation>_<timestamp>/
 ```
 
-A pasta contém:
+The folder may contain:
 
 ```text
 speed_eval_results.json
 confusion_matrix.png
 ```
 
-A matriz de confusão só é salva quando a opção abaixo é usada:
+Use `--cache-preprocessed` only when repeated evaluations justify an additional large CSV and sufficient disk space is available.
+
+## 12. Extraction latency benchmark
 
 ```bash
---save-confusion-matrix
+python scripts/05_latency_benchmark.py \
+  --dataset minds \
+  --extractor mediapipe \
+  --sample-size 5 \
+  --input-dir data/raw
 ```
 
----
+The benchmark selects videos across the duration distribution and stores a JSON report under `reports/tables/`.
 
-### 6. Observações importantes
+## Important implementation notes
 
-Use `--batch-size 1` para medir latência por amostra de forma mais direta.
+- Landmark subset selection is performed before image generation.
+- The Laines subset selects 67 source landmarks. During preprocessing, a synthetic chest midpoint is computed from the two shoulder landmarks, resulting in 68 effective points for the model.
+- The dataset class does not silently remove MediaPipe pose landmarks after subset selection.
+- Training checkpoints are selected by the lowest validation loss, matching the early-stopping criterion.
+- The requested device is respected; `--device cpu` no longer silently selects CUDA or MPS.
+- Optional timm models are imported lazily, so ResNet-18 training does not fail when timm is absent.
+- INCLUDE-50 never uses `sample_id` as a person identifier.
 
-Use batches maiores apenas se o objetivo for medir throughput, ou seja, quantas amostras por segundo o modelo processa em lote.
-
-O script executa warmup antes da medição para reduzir instabilidade inicial da GPU. O padrão é:
-
-```bash
---warmup-iters 20
-```
-
-Para evitar uso extra de disco, o script não salva o CSV pré-processado por padrão. Caso queira reutilizar o mesmo pré-processamento em várias avaliações e tenha espaço disponível, use:
-
-```bash
---cache-preprocessed
-```
+See [CODE_REVIEW.md](CODE_REVIEW.md) for the review findings and behavior-changing fixes applied to this version.

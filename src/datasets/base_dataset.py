@@ -1,25 +1,17 @@
-"""
-Dataset loaders: video-based (MINDS, UFOP) and CSV-based (KSL, Include50).
-
-Video-based datasets feed the extraction pipeline.
-CSV-based datasets load pre-processed OpenPose CSVs directly for training.
-"""
-
 from __future__ import annotations
+
+"""Dataset loaders for video-based and CSV-based ISLR datasets."""
 
 import os
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import pandas as pd
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Base
-# ──────────────────────────────────────────────────────────────────────────────
-
 class BaseVideoDataset(ABC):
-    """Dataset whose raw data is video files to be processed by an extractor."""
+    """Base class for datasets that require landmark extraction from videos."""
 
     path_key: str = ""
 
@@ -30,10 +22,11 @@ class BaseVideoDataset(ABC):
 
     @abstractmethod
     def prepare_data(self) -> list[tuple]:
-        """Return list of (video_path, video_name, category, signaler, index)."""
+        """Return ``(path, name, category, signer, index)`` tuples."""
 
     def get_processor(self, extractor):
         from extraction.video_processor import DefaultVideoProcessor
+
         return DefaultVideoProcessor(extractor)
 
     @staticmethod
@@ -42,21 +35,22 @@ class BaseVideoDataset(ABC):
             "minds": MINDSDataset,
             "ufop": UFOPDataset,
             "vlibrasil": VLibrasilDataset,
+            "vlibras": VLibrasilDataset,
         }
         if dataset_name not in registry:
             raise ValueError(
                 f"Unknown video dataset '{dataset_name}'. "
-                f"Available: {list(registry.keys())}"
+                f"Available datasets: {list(registry)}"
             )
         return registry[dataset_name](base_path)
 
 
 class BaseCsvDataset(ABC):
-    """Dataset that ships as a pre-processed CSV (no video extraction needed)."""
+    """Base class for datasets already represented as landmark CSV files."""
 
     @abstractmethod
     def load(self) -> pd.DataFrame:
-        """Return a DataFrame ready for training."""
+        """Return a DataFrame normalized for the training pipeline."""
 
     @staticmethod
     def create(dataset_name: str, data_dir: str) -> "BaseCsvDataset":
@@ -67,66 +61,60 @@ class BaseCsvDataset(ABC):
         if dataset_name not in registry:
             raise ValueError(
                 f"Unknown CSV dataset '{dataset_name}'. "
-                f"Available: {list(registry.keys())}"
+                f"Available datasets: {list(registry)}"
             )
         return registry[dataset_name](data_dir)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Video-based datasets
-# ──────────────────────────────────────────────────────────────────────────────
-
 class MINDSDataset(BaseVideoDataset):
-    """
-    Supports two layouts:
+    """MINDS-Libras video dataset loader supporting flat and nested layouts."""
 
-    Flat (all .mp4 in root — e.g. "01AcontecerSinalizador01-2.mp4"):
-        data/raw/minds/01AcontecerSinalizador01-2.mp4
-
-    Nested (original layout):
-        data/raw/minds/Sinalizador01/Canon/video.mp4
-    """
     path_key = "minds"
 
     def prepare_data(self) -> list[tuple]:
-        import re
-        videos = []
-
+        videos: list[tuple] = []
         entries = os.listdir(self.dataset_path)
-        # Detect flat layout: has .mp4 files directly in root
-        has_flat_mp4 = any(e.endswith(".mp4") for e in entries)
+        has_flat_mp4 = any(entry.lower().endswith(".mp4") for entry in entries)
 
         if has_flat_mp4:
-            # Flat: "01AcontecerSinalizador01-2.mp4"
-            pattern = re.compile(r"^(\d{2})(.+?)Sinalizador(\d+)", re.IGNORECASE)
+            pattern = re.compile(
+                r"^(\d{2})(.+?)Sinalizador(\d+)", re.IGNORECASE
+            )
             for filename in entries:
-                if not filename.endswith(".mp4"):
+                if not filename.lower().endswith(".mp4"):
                     continue
-                m = pattern.match(filename)
-                if not m:
+                match = pattern.match(filename)
+                if not match:
                     continue
-                category     = m.group(1)          # "01"
-                signaler_id  = int(m.group(3))     # 1
-                video_path   = os.path.join(self.dataset_path, filename)
-                videos.append((video_path, filename, category, signaler_id, signaler_id))
+                category = match.group(1)
+                signer_id = int(match.group(3))
+                video_path = os.path.join(self.dataset_path, filename)
+                videos.append(
+                    (video_path, filename, category, signer_id, signer_id)
+                )
         else:
-            # Nested: Sinalizador01/Canon/*.mp4
-            for signaler in entries:
-                signaler_dir = os.path.join(self.dataset_path, signaler, "Canon")
-                if not os.path.isdir(signaler_dir):
+            for signer_folder in entries:
+                signer_dir = os.path.join(
+                    self.dataset_path, signer_folder, "Canon"
+                )
+                if not os.path.isdir(signer_dir):
                     continue
-                signaler_id = int(signaler[-2:])
-                for video in os.listdir(signaler_dir):
-                    if not video.endswith(".mp4"):
+                signer_id = int(signer_folder[-2:])
+                for filename in os.listdir(signer_dir):
+                    if not filename.lower().endswith(".mp4"):
                         continue
-                    video_path = os.path.join(signaler_dir, video)
-                    category   = video.split("Sinalizador")[0][2:]
-                    videos.append((video_path, video, category, signaler_id, signaler_id))
+                    video_path = os.path.join(signer_dir, filename)
+                    category = filename.split("Sinalizador")[0][2:]
+                    videos.append(
+                        (video_path, filename, category, signer_id, signer_id)
+                    )
 
         return videos
 
 
 class UFOPDataset(BaseVideoDataset):
+    """LIBRAS-UFOP loader using ``labels.txt`` for temporal segmentation."""
+
     path_key = "ufop"
 
     def __init__(self, base_path: str):
@@ -146,130 +134,116 @@ class UFOPDataset(BaseVideoDataset):
 
     def get_processor(self, extractor):
         from extraction.video_processor import UFOPVideoProcessor
-        return UFOPVideoProcessor(extractor, self.labels, self.frames_threshold)
+
+        return UFOPVideoProcessor(
+            extractor, self.labels, self.frames_threshold
+        )
 
     def _load_labels(self) -> dict:
         labels_path = os.path.join(self.dataset_path, "labels.txt")
         if not os.path.exists(labels_path):
             raise ValueError(f"Labels file not found: {labels_path}")
-        labels = {}
-        with open(labels_path) as f:
-            for line in f:
-                parts = line.strip().split(" ")
-                labels[parts[0]] = parts[1:]
+
+        labels: dict[str, list[str]] = {}
+        with open(labels_path, encoding="utf-8") as file:
+            for line in file:
+                parts = line.strip().split()
+                if parts:
+                    labels[parts[0]] = parts[1:]
         return labels
 
 
 class VLibrasilDataset(BaseVideoDataset):
+    """V-LIBRASIL video dataset loader."""
+
     path_key = "v-librasil/videos UFPE (V-LIBRASIL)/data"
 
     def prepare_data(self) -> list[tuple]:
         videos = []
-        for video in os.listdir(self.dataset_path):
-            video_path = os.path.join(self.dataset_path, video)
-            sign = video.split("_")[0]
-            signaler = video[-5]
-            videos.append((video_path, video, sign, signaler, signaler))
+        for filename in os.listdir(self.dataset_path):
+            video_path = os.path.join(self.dataset_path, filename)
+            sign = filename.split("_")[0]
+            signer = filename[-5]
+            videos.append((video_path, filename, sign, signer, signer))
         return videos
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# CSV-based datasets
-# ──────────────────────────────────────────────────────────────────────────────
-
 class KSLDataset(BaseCsvDataset):
-    """
-    Korean Sign Language dataset.
-
-    Expected CSV columns (MediaPipe format):
-        sign, sign_id, interpreter, video_name, frame_id, hand_0_0_x, ...
-
-    Column mapping:
-        interpreter → person
-        sign_id     → category  (already int)
-        frame_id    → frame
-        video_name  → video_name
-
-    LOPO: 20 interpreters (0–19). Use sample_id groups like MINDS.
-    """
+    """Korean Sign Language landmark CSV loader."""
 
     def __init__(self, data_dir: str):
-       self.csv_path = os.path.join(data_dir, "ksl", "ksl_mediapipe.csv")
+        self.csv_path = Path(data_dir) / "ksl" / "ksl_mediapipe.csv"
 
     def load(self) -> pd.DataFrame:
-        if not os.path.exists(self.csv_path):
+        if not self.csv_path.exists():
             raise FileNotFoundError(f"KSL CSV not found: {self.csv_path}")
 
         df = pd.read_csv(self.csv_path)
+        df = df.rename(
+            columns={
+                "interpreter": "person",
+                "frame_id": "frame",
+                "sign_id": "category",
+                "sequence_id": "video_name",
+            }
+        )
 
-        # Normalize column names to what the trainer expects
-        df = df.rename(columns={
-            "interpreter": "person",
-            "frame_id":    "frame",
-            "sign_id":     "category",
-            "sequence_id": "video_name",
-        })
+        required = {"person", "category", "video_name", "frame"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"KSL CSV is missing columns: {sorted(missing)}")
 
-        # category must be consecutive int starting at 0
-        cats = sorted(df["category"].unique())
-        df["category"] = df["category"].map({c: i for i, c in enumerate(cats)})
-        # if df["category"].dtype == object or df["category"].nunique() != df["category"].max() + 1:
-        #     cats = sorted(df["category"].unique())
-        #     cat_map = {c: i for i, c in enumerate(cats)}
-        #     df["category"] = df["category"].map(cat_map)
-
+        categories = sorted(df["category"].dropna().unique())
+        df["category"] = df["category"].map(
+            {category: index for index, category in enumerate(categories)}
+        )
         return df
 
 
 class Include50Dataset(BaseCsvDataset):
-    """
-    Include-50 dataset.
+    """INCLUDE-50 loader using a fixed ``train``/``val``/``test`` split.
 
-    Expected CSV columns (MediaPipe format):
-        sign_id, category, sign, sign_key, sample_id, video_name,
-        sequence_id, frame_id, hand_0_0_x, ...
-
-    Since there is no interpreter/person column, we use sample_id as
-    the person proxy for LOPO — each sample_id value represents one
-    recording session across all signs.
-
-    Column mapping:
-        sample_id   → person
-        sign_id     → category  (re-encoded to consecutive int)
-        frame_id    → frame
-        sequence_id → video_name  (unique per video)
+    The normalized ``person`` column stores the split name so the existing
+    training pipeline can separate the three partitions without pretending
+    that ``sample_id`` is a signer identifier.
     """
 
     def __init__(self, data_dir: str):
-        self.csv_path = os.path.join(data_dir, "include50", "include50_mediapipe.csv")
+        self.csv_path = (
+            Path(data_dir)
+            / "include50"
+            / "include50_mediapipe_with_split.csv"
+        )
 
     def load(self) -> pd.DataFrame:
-        if not os.path.exists(self.csv_path):
-            raise FileNotFoundError(f"Include50 CSV not found: {self.csv_path}")
+        if not self.csv_path.exists():
+            raise FileNotFoundError(
+                f"INCLUDE-50 CSV not found: {self.csv_path}"
+            )
 
         df = pd.read_csv(self.csv_path)
+        required = {"sign_id", "sequence_id", "frame_id", "split"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"INCLUDE-50 CSV is missing columns: {sorted(missing)}"
+            )
 
-        # Use sequence_id as video_name (unique per video, no extension)
-        if "sequence_id" in df.columns and "video_name" in df.columns:
-            df["video_name"] = df["sequence_id"]
+        df["category"] = df["sign_id"]
+        df["video_name"] = df["sequence_id"].astype(str)
+        df["frame"] = df["frame_id"].astype(int)
+        df["person"] = df["split"].astype(str).str.strip().str.lower()
 
-        # sample_id → person (LOPO proxy)
-        df = df.rename(columns={
-            "sample_id": "person",
-            "frame_id":  "frame",
-        })
+        expected_splits = {"train", "val", "test"}
+        found_splits = set(df["person"].dropna().unique())
+        if found_splits != expected_splits:
+            raise ValueError(
+                f"INCLUDE-50 split values must be {sorted(expected_splits)}; "
+                f"found {sorted(found_splits)}"
+            )
 
-        # Re-encode category to consecutive int
-        # category column is a string like "19. House" — use sign_id if available
-        if "sign_id" in df.columns and df["sign_id"].notna().any():
-            df["category"] = df["sign_id"]
-        # else keep category as-is and encode
-        if df["category"].dtype == object:
-            cats = sorted(df["category"].unique())
-            df["category"] = df["category"].map({c: i for i, c in enumerate(cats)})
-
-        # Ensure consecutive int
-        cats = sorted(df["category"].unique())
-        df["category"] = df["category"].map({c: i for i, c in enumerate(cats)})
-
+        categories = sorted(df["category"].dropna().unique())
+        df["category"] = df["category"].map(
+            {category: index for index, category in enumerate(categories)}
+        )
         return df

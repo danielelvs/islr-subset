@@ -1,53 +1,64 @@
-#!/usr/bin/env python
-"""
-Step 2 — Filter landmarks and optionally impute missing values.
+#!/usr/bin/env python3
+"""Select landmark subsets and optionally impute missing coordinates."""
 
-Usage:
-    # All subsets for a single dataset
-    python scripts/02_filter_landmarks.py -d minds
-
-    # Specific subset, skip imputation (ablation)
-    python scripts/02_filter_landmarks.py -d ufop -s 2nd --no-impute
-
-    # All datasets, all subsets
-    python scripts/02_filter_landmarks.py -d minds ufop -s all 1st 2nd laines arcanjo
-"""
+from __future__ import annotations
 
 import argparse
-import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from preprocessing import SUBSETS, filter_and_save
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Landmark filtering + imputation")
-    parser.add_argument("-d", "--datasets",  nargs="+", default=["minds", "ufop"],
-                        help="Datasets to process")
-    parser.add_argument("-s", "--subsets",   nargs="+", default=list(SUBSETS.keys()),
-                        help=f"Subsets: {list(SUBSETS.keys())}")
-    parser.add_argument("-i", "--interim_dir",  default="data/interim",  help="Interim CSV dir")
-    parser.add_argument("-o", "--processed_dir", default="data/processed", help="Output dir")
-    parser.add_argument("--no-impute", action="store_true", help="Disable imputation (ablation)")
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Filter MediaPipe landmark CSV files by subset."
+    )
+    parser.add_argument(
+        "-d", "--datasets", nargs="+", default=["minds", "ufop"]
+    )
+    parser.add_argument(
+        "-s", "--subsets", nargs="+", default=list(SUBSETS)
+    )
+    parser.add_argument("-i", "--interim-dir", default="data/interim")
+    parser.add_argument("-o", "--processed-dir", default="data/processed")
+    parser.add_argument("--no-imputation", action="store_true")
     args = parser.parse_args()
 
-    impute = not args.no_impute
-
+    use_imputation = not args.no_imputation
     for dataset in args.datasets:
-        input_path = os.path.join(args.interim_dir, dataset, f"{dataset}_mediapipe.csv")
-        if not os.path.exists(input_path):
-            print(f"[SKIP] {input_path} not found.")
+        input_path = (
+            Path(args.interim_dir) / dataset / f"{dataset}_mediapipe.csv"
+        )
+        if not input_path.exists():
+            print(f"[SKIP] Input CSV not found: {input_path}")
             continue
 
         for subset in args.subsets:
-            suffix = "" if impute else "_no_imputation"
-            out = os.path.join(args.processed_dir, dataset, f"{dataset}_{subset}{suffix}.csv")
-            print(f"\n→ {dataset} / {subset} (impute={impute})")
-            filter_and_save(input_path, out, subset, impute=impute, dataset_name=dataset)
+            suffix = "" if use_imputation else "_no_imputation"
+            output_path = (
+                Path(args.processed_dir)
+                / dataset
+                / f"{dataset}_{subset}{suffix}.csv"
+            )
+            print(
+                f"\nProcessing dataset={dataset}, subset={subset}, "
+                f"imputation={use_imputation}"
+            )
+            filter_and_save(
+                str(input_path),
+                str(output_path),
+                subset,
+                impute=use_imputation,
+                dataset_name=dataset,
+            )
 
-    print("\nDone.")
+    print("\nFiltering completed.")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from torch import nn
-from torchvision.models import resnet50
+from torchvision.models import ResNet50_Weights, resnet50
 from models.base_model import BaseModel
 
 
@@ -10,7 +10,7 @@ class Resnet50Model(BaseModel):
 
     def __init__(self, num_classes: int):
         super().__init__(num_classes)
-        self._model = resnet50(pretrained=True)
+        self._model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         num_ftrs = self._model.fc.in_features
         self._model.fc = nn.Sequential(
             nn.BatchNorm1d(num_ftrs),

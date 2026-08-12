@@ -1,44 +1,59 @@
-#!/usr/bin/env python
-"""
-Step 1 — Extract landmarks from raw videos.
+#!/usr/bin/env python3
+"""Extract frame-level landmarks from a raw video dataset."""
 
-Usage:
-    python scripts/01_extract_landmarks.py -d minds -e mediapipe
-    python scripts/01_extract_landmarks.py -d ufop  -e mediapipe -i data/raw -o data/interim
-"""
+from __future__ import annotations
 
 import argparse
-import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 
 from datasets.base_dataset import BaseVideoDataset
 from extraction.base_extractor import BaseExtractor
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Landmark extraction from video datasets")
-    parser.add_argument("-d", "--dataset", required=True, choices=["minds", "ufop", "vlibras"], help="Dataset name")
-    parser.add_argument("-e", "--extractor", default="mediapipe", choices=["mediapipe", "openpose"], help="Extractor backend")
-    parser.add_argument("-i", "--input_dir", default="data/raw", help="Raw dataset root")
-    parser.add_argument("-o", "--output_dir", default="data/interim", help="Output directory for CSVs")
-    parser.add_argument("-c", "--chunk_size", type=int, default=10_000, help="Rows per CSV chunk")
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract landmarks from a supported video dataset."
+    )
+    parser.add_argument(
+        "-d",
+        "--dataset",
+        required=True,
+        choices=["minds", "ufop", "vlibrasil"],
+    )
+    parser.add_argument(
+        "-e",
+        "--extractor",
+        default="mediapipe",
+        choices=["mediapipe", "openpose"],
+    )
+    parser.add_argument("-i", "--input-dir", default="data/raw")
+    parser.add_argument("-o", "--output-dir", default="data/interim")
+    parser.add_argument("-c", "--chunk-size", type=int, default=10_000)
     args = parser.parse_args()
 
-    dataset   = BaseVideoDataset.create(args.dataset, args.input_dir)
+    dataset = BaseVideoDataset.create(args.dataset, args.input_dir)
     extractor = BaseExtractor.create(args.extractor)
     processor = dataset.get_processor(extractor)
-    videos    = dataset.prepare_data()
+    videos = dataset.prepare_data()
+    if not videos:
+        raise RuntimeError(f"No videos were found for dataset '{args.dataset}'.")
 
-    os.makedirs(os.path.join(args.output_dir, args.dataset), exist_ok=True)
-    out = os.path.join(args.output_dir, args.dataset, f"{args.dataset}_{args.extractor}.csv")
+    output_directory = Path(args.output_dir) / args.dataset
+    output_directory.mkdir(parents=True, exist_ok=True)
+    output_path = output_directory / f"{args.dataset}_{args.extractor}.csv"
+    if output_path.exists():
+        raise FileExistsError(
+            f"{output_path} already exists. Remove it before running extraction again."
+        )
 
-    if os.path.exists(out):
-        raise FileExistsError(f"{out} already exists. Remove it before re-running.")
-
-    processor.process_all(videos, out, chunk_size=args.chunk_size)
-    print(f"\nExtraction complete → {out}")
+    processor.process_all(videos, str(output_path), chunk_size=args.chunk_size)
+    print(f"\nExtraction completed: {output_path}")
 
 
 if __name__ == "__main__":

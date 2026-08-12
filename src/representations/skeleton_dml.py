@@ -7,8 +7,8 @@ class SkeletonDMLRepresentation(BaseRepresentation):
     """
     Skeleton-DML image encoding.
     Concatenates x and y channel blocks into a single image.
-    Input shape: (n_landmarks, n_frames).
-    Output shape: (n_landmarks * 2, n_frames // 3).
+    Input shape: ``(n_landmarks, n_frames)``.
+    Output shape: ``(n_landmarks, 2 * floor(n_frames / 3), 3)``.
     """
 
     name = "Skeleton-DML"

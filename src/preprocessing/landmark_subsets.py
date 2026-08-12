@@ -9,12 +9,6 @@ Each function returns a list of global holistic indices (0-542):
     522 – 542  → right hand (21 points)
 """
 
-import numpy as np
-
-# import mediapipe as mp
-# HAND_LANDMARKS = [lm.name.lower() for lm in mp.solutions.hands.HandLandmark]
-# POSE_LANDMARKS = [lm.name.lower() for lm in mp.solutions.pose.PoseLandmark]
-
 HAND_LANDMARKS = [
     "wrist",
     "thumb_cmc",
@@ -111,7 +105,7 @@ def subset_2nd() -> list[int]:
     lipsLowerOuter = [146, 91, 181, 84, 17, 314, 405, 321, 375, 291][::2][1:]
     lipsUpperInner = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308][::2][1:]
     lipsLowerInner = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308][::2][1:]
-    LIPS = list(set(lipsUpperOuter + lipsLowerOuter + lipsUpperInner + lipsLowerInner))
+    LIPS = list(dict.fromkeys(lipsUpperOuter + lipsLowerOuter + lipsUpperInner + lipsLowerInner))
     POSE = [489, 490, 492, 493, 494, 498, 499, 500, 501, 502, 503, 504, 505, 506,
             507, 508, 509, 510, 511, 512]
     LHAND = list(range(468, 489))
@@ -120,10 +114,13 @@ def subset_2nd() -> list[int]:
 
 
 def subset_laines() -> list[int]:
-    """David/Laines subset: selected face landmarks + hands + upper-body pose."""
+    """Return the 67 source landmarks used by the Laines strategy.
+
+    A synthetic chest midpoint is appended later during DataFrame preparation,
+    so the model still receives 68 effective landmark points.
+    """
     FACE = [46, 52, 53, 65, 295, 283, 282, 276, 7, 159, 155, 145, 382, 386, 249, 374, 324, 13, 78, 14]
     BODY = [489, 500, 501, 502, 503]
-    # BODY = [500, 501, 502, 503, 504, 505]
     LHAND = list(range(468, 489))
     RHAND = list(range(522, 543))
     return FACE + LHAND + BODY + RHAND
