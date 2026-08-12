@@ -1,5 +1,3 @@
-QUANDO JA TEM A EXECUCAO, NAO DEVE FAZER O PREPROCESSING (INTERPOLATION/CRIAR CSV) [OPCIONAL?]
-
 # ISLR Landmark Subset Experiments
 
 This repository implements an isolated sign language recognition (ISLR) pipeline based on MediaPipe Holistic landmarks, landmark subset selection, optional spline interpolation, Skeleton-DML image encoding, and image classification models such as ResNet-18.
