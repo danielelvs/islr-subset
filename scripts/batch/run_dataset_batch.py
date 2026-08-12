@@ -352,6 +352,7 @@ def main() -> None:
                 "translate_y_sigma": 0.0,
                 "translate_z_sigma": 0.0,
                 "horizontal_flip_prob": 0.5,
+                # mirror_chance=0.3
             },
             "output_dir": str(temporary_output_dir),
             "save_model": args.save_model,

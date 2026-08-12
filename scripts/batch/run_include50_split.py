@@ -140,7 +140,8 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--wd", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=5)
-    parser.add_argument("--seed", type=int, default=42)
+    # parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=1638102311)
     parser.add_argument("--model", default="resnet18")
     parser.add_argument("--image-method", default="Skeleton-DML")
     args = parser.parse_args()
@@ -236,6 +237,7 @@ def main() -> None:
             "translate_y_sigma": 0.0,
             "translate_z_sigma": 0.0,
             "horizontal_flip_prob": 0.5,
+            # mirror_chance=0.3
         },
         "output_dir": str(trainer_tmp_dir),
         "save_model": args.save_model,

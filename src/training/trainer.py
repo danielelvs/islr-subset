@@ -71,7 +71,8 @@ class Trainer:
 
     def run(self, df: pd.DataFrame) -> dict:
         config = self.cfg
-        seed = int(config.get("seed", 42))
+        # seed = int(config.get("seed", 42))
+        seed = int(config.get("seed", 1638102311))
         set_seed(seed)
 
         representation_class = BaseRepresentation.get_by_name(
@@ -236,16 +237,16 @@ class Trainer:
 
             if validation_loader is not None:
                 model.eval()
-                validation_loss_sum = 0.0
                 validation_correct = 0
                 validation_total = 0
+
                 with torch.no_grad():
                     for inputs, labels in validation_loader:
                         inputs = inputs.to(self.device, non_blocking=True)
                         labels = labels.to(self.device, non_blocking=True)
+
                         outputs = model(inputs)
-                        batch_loss = criterion(outputs, labels)
-                        validation_loss_sum += batch_loss.item() * inputs.size(0)
+
                         validation_correct += (
                             outputs.argmax(dim=1) == labels
                         ).sum().item()
@@ -253,11 +254,41 @@ class Trainer:
 
                 if validation_total == 0:
                     raise RuntimeError("No validation samples were processed.")
-                validation_loss = validation_loss_sum / validation_total
+
                 validation_accuracy = validation_correct / validation_total
+
+                # Same validation-loss calculation used by Alves:
+                # loss from the last validation batch.
+                validation_loss = criterion(outputs, labels).item()
+
             else:
                 validation_loss = train_loss
                 validation_accuracy = train_accuracy
+
+            # if validation_loader is not None:
+            #     model.eval()
+            #     validation_loss_sum = 0.0
+            #     validation_correct = 0
+            #     validation_total = 0
+            #     with torch.no_grad():
+            #         for inputs, labels in validation_loader:
+            #             inputs = inputs.to(self.device, non_blocking=True)
+            #             labels = labels.to(self.device, non_blocking=True)
+            #             outputs = model(inputs)
+            #             batch_loss = criterion(outputs, labels)
+            #             validation_loss_sum += batch_loss.item() * inputs.size(0)
+            #             validation_correct += (
+            #                 outputs.argmax(dim=1) == labels
+            #             ).sum().item()
+            #             validation_total += labels.size(0)
+
+            #     if validation_total == 0:
+            #         raise RuntimeError("No validation samples were processed.")
+            #     validation_loss = validation_loss_sum / validation_total
+            #     validation_accuracy = validation_correct / validation_total
+            # else:
+            #     validation_loss = train_loss
+            #     validation_accuracy = train_accuracy
 
             history["validation_loss"].append(float(validation_loss))
             history["validation_accuracy"].append(float(validation_accuracy))
@@ -292,51 +323,56 @@ class Trainer:
                 print(f"Early stopping at epoch {current_epoch}.")
                 break
 
-            model.load_state_dict(best_weights)
-            model.eval()
+        # Training is finished. Load the checkpoint with the highest
+        # validation accuracy before evaluating on the test set.
+        model.load_state_dict(best_weights)
+        model.eval()
 
-            true_labels: list[int] = []
-            predicted_labels: list[int] = []
+        true_labels: list[int] = []
+        predicted_labels: list[int] = []
 
-            with torch.no_grad():
-                for inputs, labels in test_loader:
-                    inputs = inputs.to(self.device, non_blocking=True)
+        with torch.no_grad():
+            for inputs, labels in test_loader:
+                inputs = inputs.to(self.device, non_blocking=True)
 
-                    predictions = model(inputs).argmax(dim=1).cpu()
+                predictions = model(inputs).argmax(dim=1).cpu()
 
-                    batch_true = labels.numpy().astype(int).tolist()
-                    batch_pred = predictions.numpy().astype(int).tolist()
+                batch_true = labels.numpy().astype(int).tolist()
+                batch_pred = predictions.numpy().astype(int).tolist()
 
-                    if batch_true:
-                        min_label = min(batch_true)
-                        max_label = max(batch_true)
+                if batch_true:
+                    min_label = min(batch_true)
+                    max_label = max(batch_true)
 
-                        if min_label < 0 or max_label >= num_classes:
-                            raise RuntimeError(
-                                f"Invalid test labels before metric computation: "
-                                f"min={min_label}, max={max_label}, "
-                                f"num_classes={num_classes}"
-                            )
+                    if min_label < 0 or max_label >= num_classes:
+                        raise RuntimeError(
+                            f"Invalid test labels before metric computation: "
+                            f"min={min_label}, max={max_label}, "
+                            f"num_classes={num_classes}"
+                        )
 
-                    true_labels.extend(batch_true)
-                    predicted_labels.extend(batch_pred)
+                true_labels.extend(batch_true)
+                predicted_labels.extend(batch_pred)
 
         if not true_labels:
             raise RuntimeError("No test samples were processed.")
 
         accuracy = accuracy_score(true_labels, predicted_labels)
+
         precision = precision_score(
             true_labels,
             predicted_labels,
             average="macro",
             zero_division=0,
         )
+
         recall = recall_score(
             true_labels,
             predicted_labels,
             average="macro",
             zero_division=0,
         )
+
         f1 = f1_score(
             true_labels,
             predicted_labels,
@@ -346,7 +382,9 @@ class Trainer:
 
         print(
             f"\nTest metrics | accuracy={accuracy:.4f} "
-            f"precision={precision:.4f} recall={recall:.4f} f1={f1:.4f}"
+            f"precision={precision:.4f} "
+            f"recall={recall:.4f} "
+            f"f1={f1:.4f}"
         )
 
         result = {

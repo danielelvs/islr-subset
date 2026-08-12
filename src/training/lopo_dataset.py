@@ -69,7 +69,7 @@ def perform_augmentation(
     translate_y = np.random.normal(0, config.get("translate_y_sigma", 0.0))
     translate_z = np.random.normal(0, config.get("translate_z_sigma", 0.0))
     flip_probability = config.get("horizontal_flip_prob", 0.5)
-
+    # mirror_chance=0.3
     x, y, z = rotate_landmarks(x, y, z, math.radians(rotation))
     x = translate_landmarks(zoom_landmarks(x, zoom), translate_x)
     y = translate_landmarks(zoom_landmarks(y, zoom), translate_y)
