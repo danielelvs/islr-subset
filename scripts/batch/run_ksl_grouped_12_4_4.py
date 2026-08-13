@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run KSL with five disjoint 12/4/4 signer folds."""
+"""Run KSL using the signer groups from the Alves KSL implementation."""
 
 from __future__ import annotations
 
@@ -46,14 +46,33 @@ GROUPS: list[list[str]] = [
     ["16", "17", "18", "19"],
 ]
 
+# FOLDS: list[dict[str, Any]] = [
+#     {"fold": 1, "test": GROUPS[0], "val": GROUPS[1]},
+#     {"fold": 2, "test": GROUPS[1], "val": GROUPS[2]},
+#     {"fold": 3, "test": GROUPS[2], "val": GROUPS[3]},
+#     {"fold": 4, "test": GROUPS[3], "val": GROUPS[4]},
+#     {"fold": 5, "test": GROUPS[4], "val": GROUPS[0]},
+# ]
+
 FOLDS: list[dict[str, Any]] = [
-    {"fold": 1, "test": GROUPS[0], "val": GROUPS[1]},
-    {"fold": 2, "test": GROUPS[1], "val": GROUPS[2]},
-    {"fold": 3, "test": GROUPS[2], "val": GROUPS[3]},
-    {"fold": 4, "test": GROUPS[3], "val": GROUPS[4]},
-    {"fold": 5, "test": GROUPS[4], "val": GROUPS[0]},
+    {"fold": 1, "test": GROUPS[0], "val": GROUPS[0]},
+    {"fold": 2, "test": GROUPS[1], "val": GROUPS[1]},
+    {"fold": 3, "test": GROUPS[2], "val": GROUPS[2]},
+    {"fold": 4, "test": GROUPS[3], "val": GROUPS[3]},
+    {"fold": 5, "test": GROUPS[4], "val": GROUPS[4]},
 ]
 
+# EXPECTED_SIGNERS = {
+#     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+#     "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"
+# }
+
+# test_people = ["0", "1", "2", "3"]
+# val_people = ["0", "1", "2", "3"]
+
+# train_people = sorted_signers(
+#     EXPECTED_SIGNERS - set(test_people) - set(val_people)
+# )
 EXPECTED_SIGNERS = {str(i) for i in range(20)}
 
 
@@ -144,8 +163,8 @@ def validate_dataset(df: pd.DataFrame) -> None:
 
 
 def fold_partition(fold_spec: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
-    test_people = [str(v) for v in fold_spec["test"]]
-    val_people = [str(v) for v in fold_spec["val"]]
+    test_people = [str(v) for v in fold_spec["test"]] # ["0", "1", "2", "3"]
+    val_people = [str(v) for v in fold_spec["val"]] # ["0", "1", "2", "3"]
     train_people = sorted_signers(
         EXPECTED_SIGNERS - set(test_people) - set(val_people)
     )
@@ -154,15 +173,37 @@ def fold_partition(fold_spec: dict[str, Any]) -> tuple[list[str], list[str], lis
     val_set = set(val_people)
     test_set = set(test_people)
 
-    if len(train_people) != 12 or len(val_people) != 4 or len(test_people) != 4:
+    if len(train_people) != 16 or len(val_people) != 4 or len(test_people) != 4:
         raise RuntimeError(
             f"Invalid split sizes in fold {fold_spec['fold']}: "
             f"train={len(train_people)}, val={len(val_people)}, test={len(test_people)}"
         )
-    if train_set & val_set or train_set & test_set or val_set & test_set:
-        raise RuntimeError(f"Signer leakage detected in fold {fold_spec['fold']}.")
-    if train_set | val_set | test_set != EXPECTED_SIGNERS:
-        raise RuntimeError(f"Fold {fold_spec['fold']} does not cover all 20 signers.")
+
+    if train_set & val_set or train_set & test_set:
+        raise RuntimeError(
+            f"Training signer overlap detected in fold {fold_spec['fold']}."
+        )
+
+    if val_set != test_set:
+        raise RuntimeError(
+            f"Validation and test signer groups must be identical "
+            f"in fold {fold_spec['fold']}."
+        )
+
+    if train_set | test_set != EXPECTED_SIGNERS:
+        raise RuntimeError(
+            f"Fold {fold_spec['fold']} does not cover all 20 signers."
+        )
+
+    # if len(train_people) != 12 or len(val_people) != 4 or len(test_people) != 4:
+    #     raise RuntimeError(
+    #         f"Invalid split sizes in fold {fold_spec['fold']}: "
+    #         f"train={len(train_people)}, val={len(val_people)}, test={len(test_people)}"
+    #     )
+    # if train_set & val_set or train_set & test_set or val_set & test_set:
+    #     raise RuntimeError(f"Signer leakage detected in fold {fold_spec['fold']}.")
+    # if train_set | val_set | test_set != EXPECTED_SIGNERS:
+    #     raise RuntimeError(f"Fold {fold_spec['fold']} does not cover all 20 signers.")
 
     return train_people, val_people, test_people
 
@@ -193,7 +234,7 @@ def print_fold_distribution(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run KSL using five disjoint 12-train/4-val/4-test signer folds."
+        description="Run KSL using the five signer groups from the Alves KSL implementation."
     )
     parser.add_argument("--dataset", default="ksl")
     parser.add_argument(
@@ -204,7 +245,7 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("experiments/ksl_grouped_12_4_4"),
+        default=Path("experiments/ksl_alves_groups_16_4"),
     )
     parser.add_argument(
         "--subset",
@@ -260,7 +301,7 @@ def main() -> None:
         f"({effective_subset_landmark_count(args.subset)} effective landmarks)"
     )
     print(f"imputation:       {imputation_label(args.imputation)}")
-    print("protocol:         grouped signer-independent 12/4/4")
+    print("protocol:         Alves grouped KSL evaluation (16 train / 4 val-test)")
     print("folds:            5")
     print(f"device:           {args.device}")
     print(f"epochs:           {args.epochs}")
@@ -327,7 +368,7 @@ def main() -> None:
             {
                 "status": "running",
                 "dataset": args.dataset,
-                "protocol": "grouped_12_4_4",
+                "protocol": "alves_same_signer_groups",
                 "fold": fold,
                 "subset": args.subset,
                 "imputation": args.imputation,
@@ -340,7 +381,7 @@ def main() -> None:
 
         reference = (
             f"dataset={args.dataset}"
-            f"__protocol=grouped_12_4_4"
+            f"__protocol=alves_same_signer_groups"
             f"__subset={args.subset}"
             f"__imputation={imputation_label(args.imputation)}"
             f"__fold={fold:02d}"
@@ -367,6 +408,14 @@ def main() -> None:
             "patience": args.patience,
             "batch_size": args.batch_size,
             "num_workers": args.num_workers,
+            "augment_cfg": {
+                "rotation_sigma": 12,
+                "zoom_sigma": 0.1,
+                "translate_x_sigma": 0.06,
+                "translate_y_sigma": 0.0,
+                "translate_z_sigma": 0.0,
+                "horizontal_flip_prob": 0.5,
+            },
             "output_dir": trainer_tmp_dir,
             "save_model": args.save_model,
             "model_output_path": checkpoint_path if args.save_model else None,
@@ -381,7 +430,7 @@ def main() -> None:
             result = {
                 "status": "completed",
                 "dataset": args.dataset,
-                "protocol": "grouped_12_4_4",
+                "protocol": "alves_grouped_16_4",
                 "fold": fold,
                 "subset": args.subset,
                 "subset_landmarks": effective_subset_landmark_count(args.subset),
@@ -429,7 +478,7 @@ def main() -> None:
                 {
                     "status": "failed",
                     "dataset": args.dataset,
-                    "protocol": "grouped_12_4_4",
+                    "protocol": "alves_grouped_16_4",
                     "fold": fold,
                     "subset": args.subset,
                     "imputation": args.imputation,

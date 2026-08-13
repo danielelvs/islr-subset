@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DATA_CSV="${DATA_CSV:-data/interim/ksl/ksl_mediapipe.csv}"
-RESULTS_DIR="${RESULTS_DIR:-experiments/ksl_grouped_12_4_4}"
+RESULTS_DIR="${RESULTS_DIR:-experiments/ksl_alves_groups_16_4}"
 DEVICE="${DEVICE:-cuda}"
 
 EPOCHS="${EPOCHS:-50}"
@@ -21,7 +21,7 @@ SUBSETS=(all laines arcanjo 1st 2nd)
 IMPUTATIONS=(false true)
 
 echo "============================================================"
-echo "KSL grouped 12/4/4 experiment"
+echo "KSL Alves signer-group reproduction experiment"
 echo "5 subsets x 2 imputation settings x 5 folds = 50 runs"
 echo "Data:    $DATA_CSV"
 echo "Results: $RESULTS_DIR"
@@ -55,4 +55,4 @@ for subset in "${SUBSETS[@]}"; do
 done
 
 echo
-echo "All KSL grouped 12/4/4 conditions finished."
+echo "All Alves signer-group reproduction conditions finished."

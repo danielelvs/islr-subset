@@ -20,12 +20,12 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("experiments/ksl_grouped_12_4_4"),
+        default=Path("experiments/ksl_alves_groups_16_4"),
     )
     parser.add_argument(
         "--reports-dir",
         type=Path,
-        default=Path("reports/ksl_grouped_12_4_4"),
+        default=Path("reports/ksl_alves_groups_16_4"),
     )
     args = parser.parse_args()
 
