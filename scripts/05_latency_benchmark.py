@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure landmark extraction latency for MediaPipe or OpenPose."""
+"""Measure MediaPipe landmark extraction latency."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def main() -> None:
         "-e",
         "--extractor",
         default="mediapipe",
-        choices=["mediapipe", "openpose"],
+        choices=["mediapipe"],
     )
     parser.add_argument("-i", "--input-dir", default="data/raw")
     parser.add_argument("-n", "--sample-size", type=int, default=5)

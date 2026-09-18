@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize the five KSL grouped 12/4/4 folds per condition."""
+"""Summarize the five KSL Alves 16/4 split folds per condition."""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("experiments/ksl_alves_groups_16_4"),
+        default=Path("experiments/ksl_alves_same_groups"),
     )
     parser.add_argument(
         "--reports-dir",
         type=Path,
-        default=Path("reports/ksl_alves_groups_16_4"),
+        default=Path("reports/ksl_alves_same_groups"),
     )
     args = parser.parse_args()
 

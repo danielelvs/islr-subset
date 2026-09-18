@@ -28,12 +28,18 @@ DEFAULT_METADATA_COLUMNS = [
     "split",
     "interpreter",
     "signer",
+    "dataset",
+    "class_id",
+    "sample_id",
+    "sequence_id",
+    "signer_id",
+    "source_frame_id",
 ]
 
 _COLUMN_ALIASES = {
-    "person": ["person", "interpreter", "signer", "participant_id"],
-    "category": ["category", "sign_id", "label", "class"],
-    "video_name": ["video_name", "sequence_id", "path", "file", "filename"],
+    "person": ["person", "interpreter", "signer", "participant_id", "signer_id"],
+    "category": ["category", "sign_id", "label", "class", "class_id"],
+    "video_name": ["video_name", "sequence_id", "path", "file", "filename", "sample_id"],
     "frame": ["frame", "frame_id"],
 }
 
@@ -173,6 +179,14 @@ def normalize_metadata(
     """
 
     df = raw_df.copy()
+    publication_schema = {
+        "dataset", "class_id", "sample_id", "signer_id", "frame_id"
+    }.issubset(df.columns)
+    if publication_schema:
+        person_col = person_col or "signer_id"
+        category_col = category_col or "class_id"
+        video_col = video_col or "sample_id"
+        frame_col = frame_col or "frame_id"
     source_columns = {
         "person": _resolve_source_column(df, "person", person_col),
         "category": _resolve_source_column(df, "category", category_col),
@@ -218,6 +232,29 @@ def normalize_metadata(
     if lowercase_person:
         person = person.str.lower()
     df["person"] = person
+
+    if (df["frame"] < 0).any():
+        raise ValueError("Frame identifiers must be non-negative integers.")
+    duplicate_frames = df.duplicated(["video_name", "frame"], keep=False)
+    if duplicate_frames.any():
+        examples = (
+            df.loc[duplicate_frames, ["video_name", "frame"]]
+            .drop_duplicates()
+            .head(10)
+            .to_dict("records")
+        )
+        raise ValueError(f"Duplicate frame keys (video_name, frame): {examples}")
+    video_metadata = df.groupby("video_name", sort=False).agg(
+        categories=("category", "nunique"), people=("person", "nunique")
+    )
+    inconsistent = video_metadata[
+        (video_metadata["categories"] != 1) | (video_metadata["people"] != 1)
+    ]
+    if not inconsistent.empty:
+        raise ValueError(
+            "Each video/sample must belong to exactly one category and one "
+            f"person/split. Invalid examples: {inconsistent.head(10).index.tolist()}"
+        )
 
     if allowed_person_values is not None:
         found = set(df["person"].dropna().unique())
@@ -286,7 +323,7 @@ def prepare_landmark_dataframe(
                 missing_columns.append(output_column)
             else:
                 landmark_data[output_column] = pd.to_numeric(
-                    df[source_column], errors="coerce"
+                    df[source_column], errors="raise"
                 )
 
     landmark_df = pd.DataFrame(landmark_data, index=df.index)
@@ -294,11 +331,11 @@ def prepare_landmark_dataframe(
     landmark_columns = list(landmark_df.columns)
 
     if missing_columns:
-        print(
-            f"[WARNING] {len(missing_columns)} landmark coordinate columns were "
-            "not found and will be filled with zero."
+        raise ValueError(
+            f"{len(missing_columns)} required landmark coordinate columns were "
+            "not found. Refusing to replace an absent schema column with zero. "
+            f"Examples: {missing_columns[:10]}"
         )
-        print(f"          Examples: {missing_columns[:10]}")
 
     # Interpolation must follow temporal frame order within each video.
     result = result.sort_values(["video_name", "frame"]).reset_index(drop=True)

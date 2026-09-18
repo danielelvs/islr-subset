@@ -266,7 +266,7 @@ def main() -> None:
     print(f"Dataset:        {args.dataset}")
     print(f"CSV:            {args.data_csv}")
     print(f"Checkpoint:     {args.checkpoint_path}")
-    print(f"Subset:         {args.subset} ({len(effective_subset_landmark_count(args.subset))} landmarks)")
+    print(f"Subset:         {args.subset} ({effective_subset_landmark_count(args.subset)} landmarks)")
     print(f"Imputation:     {imputation_label(args.imputation)}")
     print(f"Evaluation key: {args.person_col}={args.eval_person}")
     print(f"Output folder:  {args.output_dir}")

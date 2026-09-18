@@ -179,14 +179,21 @@ class KSLDataset(BaseCsvDataset):
             raise FileNotFoundError(f"KSL CSV not found: {self.csv_path}")
 
         df = pd.read_csv(self.csv_path)
-        df = df.rename(
-            columns={
-                "interpreter": "person",
-                "frame_id": "frame",
-                "sign_id": "category",
-                "sequence_id": "video_name",
-            }
-        )
+        if {"class_id", "sample_id", "signer_id", "frame_id"}.issubset(df.columns):
+            if "dataset" in df.columns:
+                df = df[df["dataset"].eq("ksl")].copy()
+            df["person"] = df["signer_id"]
+            df["category"] = df["class_id"]
+            df["video_name"] = df["sample_id"]
+            df["frame"] = df["frame_id"]
+        else:
+            df = df.rename(
+                columns={
+                    "interpreter": "person",
+                    "frame_id": "frame",
+                    "sign_id": "category",
+                }
+            )
 
         required = {"person", "category", "video_name", "frame"}
         missing = required - set(df.columns)
@@ -222,15 +229,26 @@ class Include50Dataset(BaseCsvDataset):
             )
 
         df = pd.read_csv(self.csv_path)
-        required = {"sign_id", "sequence_id", "frame_id", "split"}
+        is_publication_schema = {"class_id", "sample_id", "frame_id", "split"}.issubset(df.columns)
+        required = (
+            {"class_id", "sample_id", "frame_id", "split"}
+            if is_publication_schema
+            else {"sign_id", "sequence_id", "frame_id", "split"}
+        )
         missing = required - set(df.columns)
         if missing:
             raise ValueError(
                 f"INCLUDE-50 CSV is missing columns: {sorted(missing)}"
             )
 
-        df["category"] = df["sign_id"]
-        df["video_name"] = df["sequence_id"].astype(str)
+        if is_publication_schema:
+            if "dataset" in df.columns:
+                df = df[df["dataset"].eq("include50")].copy()
+            df["category"] = df["class_id"]
+            df["video_name"] = df["sample_id"].astype(str)
+        else:
+            df["category"] = df["sign_id"]
+            df["video_name"] = df["sequence_id"].astype(str)
         df["frame"] = df["frame_id"].astype(int)
         df["person"] = df["split"].astype(str).str.strip().str.lower()
 

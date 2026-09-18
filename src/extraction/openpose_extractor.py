@@ -1,4 +1,10 @@
 from __future__ import annotations
+"""Legacy OpenPose reference implementation.
+
+This module is excluded from the supported command-line pipeline. It is kept
+only to document the earlier OpenPose comparison and requires a manual,
+platform-specific pyopenpose build.
+"""
 import os
 import sys
 import cv2

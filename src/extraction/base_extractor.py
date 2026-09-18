@@ -18,9 +18,7 @@ class BaseExtractor(ABC):
         if extractor_name == "mediapipe":
             from extraction.mediapipe_extractor import MediaPipeExtractor
             return MediaPipeExtractor()
-        elif extractor_name == "openpose":
-            from extraction.openpose_extractor import OpenPoseExtractor
-            return OpenPoseExtractor()
         raise ValueError(
-            f"Extractor '{extractor_name}' not recognized. Use 'mediapipe' or 'openpose'."
+            f"Extractor '{extractor_name}' not recognized. The supported extractor is 'mediapipe'. "
+            "The OpenPose implementation is retained as legacy reference code only."
         )

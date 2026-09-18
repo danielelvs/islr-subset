@@ -61,6 +61,14 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(temporary_path, path)
 
 
+def result_matches(path: Path, expected: dict[str, Any]) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return all(payload.get(key) == value for key, value in expected.items())
+
+
 def load_or_create_preprocessed(
     *,
     data_csv: Path,
@@ -69,6 +77,10 @@ def load_or_create_preprocessed(
     use_imputation: bool,
     force: bool,
     cache_enabled: bool,
+    category_col: str,
+    video_col: str,
+    frame_col: str,
+    person_col: str,
 ) -> pd.DataFrame:
     if cache_enabled and cache_path.exists() and not force:
         print(f"Using preprocessed CSV cache: {cache_path}")
@@ -78,10 +90,10 @@ def load_or_create_preprocessed(
         data_csv,
         subset=subset,
         use_imputation=use_imputation,
-        category_col="sign_id",
-        video_col="sequence_id",
-        frame_col="frame_id",
-        person_col="split",
+        category_col=category_col,
+        video_col=video_col,
+        frame_col=frame_col,
+        person_col=person_col,
         lowercase_person=True,
         allowed_person_values={"train", "val", "test"},
     )
@@ -144,6 +156,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=1638102311)
     parser.add_argument("--model", default="resnet18")
     parser.add_argument("--image-method", default="Skeleton-DML")
+    parser.add_argument("--category-col", default="sign_id")
+    parser.add_argument("--video-col", default="sequence_id")
+    parser.add_argument("--frame-col", default="frame_id")
+    parser.add_argument("--person-col", default="split")
     args = parser.parse_args()
 
     args.results_dir.mkdir(parents=True, exist_ok=True)
@@ -176,6 +192,10 @@ def main() -> None:
         use_imputation=args.imputation,
         force=args.force_preprocess,
         cache_enabled=args.cache_preprocessed,
+        category_col=args.category_col,
+        video_col=args.video_col,
+        frame_col=args.frame_col,
+        person_col=args.person_col,
     )
 
     run_dir = (
@@ -190,9 +210,28 @@ def main() -> None:
     running_path = run_dir / "status_running.json"
     checkpoint_path = run_dir / "best_model.pth"
 
+    expected_result = {
+        "dataset": args.dataset,
+        "protocol": "fixed_split",
+        "subset": args.subset,
+        "imputation": args.imputation,
+        "epochs": args.epochs,
+        "learning_rate": args.lr,
+        "weight_decay": args.wd,
+        "batch_size": args.batch_size,
+        "patience": args.patience,
+        "model": args.model,
+        "image_method": args.image_method,
+        "seed": args.seed,
+    }
     if args.resume and result_path.exists() and not args.force_run:
-        print(f"Result already exists; skipping run: {result_path}")
-        return
+        if result_matches(result_path, expected_result):
+            print(f"Matching result already exists; skipping run: {result_path}")
+            return
+        raise RuntimeError(
+            f"Existing result does not match the requested configuration: {result_path}. "
+            "Use a new results directory or --force-run to replace it."
+        )
 
     run_dir.mkdir(parents=True, exist_ok=True)
     failed_path.unlink(missing_ok=True)

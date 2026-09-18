@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+import importlib.util
 from pathlib import Path
 
 import numpy as np
@@ -169,6 +170,68 @@ class CorePipelineTests(unittest.TestCase):
 
         self.assertEqual(prepared["frame"].tolist(), [0, 1, 2])
         self.assertAlmostEqual(float(prepared.loc[1, "hand_0_00_x"]), 1.0)
+
+    def test_publication_schema_metadata_is_supported(self) -> None:
+        rows = []
+        for frame_id in range(2):
+            row = {
+                "dataset": "ksl",
+                "class_id": "ksl::01",
+                "sample_id": "ksl::00::00_01.MP4",
+                "sequence_id": "ksl::00::00_01.MP4",
+                "signer_id": "ksl::00",
+                "frame_id": frame_id,
+                "split": "",
+            }
+            for hand in (0, 1):
+                for landmark_index in range(21):
+                    for axis in "xyz":
+                        row[f"hand_{hand}_{landmark_index}_{axis}"] = 0.25
+            for landmark_index in range(33):
+                for axis in "xyz":
+                    row[f"pose_{landmark_index}_{axis}"] = 0.5
+            rows.append(row)
+
+        prepared = prepare_landmark_dataframe(
+            pd.DataFrame(rows), subset="arcanjo", use_imputation=False
+        )
+        self.assertEqual(prepared["person"].unique().tolist(), ["ksl::00"])
+        self.assertEqual(prepared["video_name"].unique().tolist(), ["ksl::00::00_01.MP4"])
+        self.assertEqual(prepared["frame"].tolist(), [0, 1])
+        self.assertEqual(prepared["category"].unique().tolist(), [0])
+
+    def test_alves_ksl_folds_reproduce_16_4_same_validation_and_test(self) -> None:
+        script = PROJECT_ROOT / "scripts" / "batch" / "run_ksl_alves_split.py"
+        spec = importlib.util.spec_from_file_location("ksl_alves_split", script)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        for fold in module.FOLDS:
+            train, validation, test = module.fold_partition(fold)
+            self.assertEqual((len(train), len(validation), len(test)), (16, 4, 4))
+            self.assertFalse(set(train) & set(validation))
+            self.assertFalse(set(train) & set(test))
+            self.assertEqual(set(validation), set(test))
+
+    def test_duplicate_frame_key_is_rejected(self) -> None:
+        row = {
+            "class_id": "ksl::01", "sample_id": "ksl::sample",
+            "signer_id": "ksl::00", "frame_id": 0, "dataset": "ksl",
+        }
+        with self.assertRaisesRegex(ValueError, "Duplicate frame keys"):
+            prepare_landmark_dataframe(
+                pd.DataFrame([row, row]), subset="arcanjo", use_imputation=False
+            )
+
+    def test_missing_landmark_column_is_rejected(self) -> None:
+        row = {
+            "class_id": "ksl::01", "sample_id": "ksl::sample",
+            "signer_id": "ksl::00", "frame_id": 0, "dataset": "ksl",
+        }
+        with self.assertRaisesRegex(ValueError, "required landmark coordinate"):
+            prepare_landmark_dataframe(
+                pd.DataFrame([row]), subset="arcanjo", use_imputation=False
+            )
 
 
 if __name__ == "__main__":

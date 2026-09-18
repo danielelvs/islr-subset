@@ -173,3 +173,6 @@ cython_debug/
 
 data/*/**
 experiments/*/preprocessed/**
+
+# Local backups of large generated publication bundles
+archive/previous_publication_bundles/

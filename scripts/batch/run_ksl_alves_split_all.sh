@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DATA_CSV="${DATA_CSV:-data/interim/ksl/ksl_mediapipe.csv}"
-RESULTS_DIR="${RESULTS_DIR:-experiments/ksl_alves_groups_16_4}"
+RESULTS_DIR="${RESULTS_DIR:-experiments/ksl_alves_same_groups}"
 DEVICE="${DEVICE:-cuda}"
 
 EPOCHS="${EPOCHS:-50}"
@@ -21,7 +21,7 @@ SUBSETS=(all laines arcanjo 1st 2nd)
 IMPUTATIONS=(false true)
 
 echo "============================================================"
-echo "KSL Alves signer-group reproduction experiment"
+echo "KSL Alves split reproduction (16 train / same 4 val and test)"
 echo "5 subsets x 2 imputation settings x 5 folds = 50 runs"
 echo "Data:    $DATA_CSV"
 echo "Results: $RESULTS_DIR"
@@ -35,7 +35,7 @@ for subset in "${SUBSETS[@]}"; do
     echo "subset=$subset | imputation=$imputation"
     echo "------------------------------------------------------------"
 
-    python -u scripts/batch/run_ksl_grouped_12_4_4.py \
+    python -u scripts/batch/run_ksl_alves_split.py \
       --data-csv "$DATA_CSV" \
       --results-dir "$RESULTS_DIR" \
       --subset "$subset" \

@@ -30,7 +30,7 @@ def main() -> None:
         "-e",
         "--extractor",
         default="mediapipe",
-        choices=["mediapipe", "openpose"],
+        choices=["mediapipe"],
     )
     parser.add_argument("-i", "--input-dir", default="data/raw")
     parser.add_argument("-o", "--output-dir", default="data/interim")

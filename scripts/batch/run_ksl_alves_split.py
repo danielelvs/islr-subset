@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run KSL using the signer groups from the Alves KSL implementation."""
+"""Reproduce the five-group KSL split used by the Alves implementation."""
 
 from __future__ import annotations
 
@@ -46,14 +46,6 @@ GROUPS: list[list[str]] = [
     ["16", "17", "18", "19"],
 ]
 
-# FOLDS: list[dict[str, Any]] = [
-#     {"fold": 1, "test": GROUPS[0], "val": GROUPS[1]},
-#     {"fold": 2, "test": GROUPS[1], "val": GROUPS[2]},
-#     {"fold": 3, "test": GROUPS[2], "val": GROUPS[3]},
-#     {"fold": 4, "test": GROUPS[3], "val": GROUPS[4]},
-#     {"fold": 5, "test": GROUPS[4], "val": GROUPS[0]},
-# ]
-
 FOLDS: list[dict[str, Any]] = [
     {"fold": 1, "test": GROUPS[0], "val": GROUPS[0]},
     {"fold": 2, "test": GROUPS[1], "val": GROUPS[1]},
@@ -62,17 +54,6 @@ FOLDS: list[dict[str, Any]] = [
     {"fold": 5, "test": GROUPS[4], "val": GROUPS[4]},
 ]
 
-# EXPECTED_SIGNERS = {
-#     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-#     "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"
-# }
-
-# test_people = ["0", "1", "2", "3"]
-# val_people = ["0", "1", "2", "3"]
-
-# train_people = sorted_signers(
-#     EXPECTED_SIGNERS - set(test_people) - set(val_people)
-# )
 EXPECTED_SIGNERS = {str(i) for i in range(20)}
 
 
@@ -95,6 +76,14 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(temporary_path, path)
 
 
+def result_matches(path: Path, expected: dict[str, Any]) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return all(payload.get(key) == value for key, value in expected.items())
+
+
 def sorted_signers(values: set[str] | list[str]) -> list[str]:
     return sorted((str(v) for v in values), key=lambda value: int(value))
 
@@ -110,17 +99,26 @@ def load_or_create_preprocessed(
 ) -> pd.DataFrame:
     if cache_enabled and cache_path.exists() and not force:
         print(f"Using preprocessed CSV cache: {cache_path}")
-        return pd.read_csv(cache_path)
-
-    processed = load_and_prepare_csv(
-        data_csv,
-        subset=subset,
-        use_imputation=use_imputation,
-    )
+        processed = pd.read_csv(cache_path)
+    else:
+        processed = load_and_prepare_csv(
+            data_csv,
+            subset=subset,
+            use_imputation=use_imputation,
+        )
 
     processed["person"] = processed["person"].astype(str).str.strip()
 
-    if cache_enabled:
+    found_signers = set(processed["person"])
+    excluded_signers = found_signers - EXPECTED_SIGNERS
+    if excluded_signers:
+        print(
+            "Excluding signer IDs outside the Alves 16/4 split protocol: "
+            f"{sorted_signers(excluded_signers)}"
+        )
+        processed = processed[processed["person"].isin(EXPECTED_SIGNERS)].copy()
+
+    if cache_enabled and (force or not cache_path.exists()):
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         processed.to_csv(cache_path, index=False)
         print(f"Preprocessed CSV saved to: {cache_path}")
@@ -145,7 +143,7 @@ def validate_dataset(df: pd.DataFrame) -> None:
         missing = sorted_signers(EXPECTED_SIGNERS - found_signers)
         extra = sorted_signers(found_signers - EXPECTED_SIGNERS)
         raise ValueError(
-            "The grouped 12/4/4 protocol expects signer IDs 0..19. "
+            "The Alves 16/4 split protocol expects signer IDs 0..19. "
             f"Missing={missing}; extra={extra}"
         )
 
@@ -163,8 +161,8 @@ def validate_dataset(df: pd.DataFrame) -> None:
 
 
 def fold_partition(fold_spec: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
-    test_people = [str(v) for v in fold_spec["test"]] # ["0", "1", "2", "3"]
-    val_people = [str(v) for v in fold_spec["val"]] # ["0", "1", "2", "3"]
+    test_people = [str(v) for v in fold_spec["test"]]
+    val_people = [str(v) for v in fold_spec["val"]]
     train_people = sorted_signers(
         EXPECTED_SIGNERS - set(test_people) - set(val_people)
     )
@@ -180,30 +178,16 @@ def fold_partition(fold_spec: dict[str, Any]) -> tuple[list[str], list[str], lis
         )
 
     if train_set & val_set or train_set & test_set:
-        raise RuntimeError(
-            f"Training signer overlap detected in fold {fold_spec['fold']}."
-        )
-
+        raise RuntimeError(f"Training signer leakage detected in fold {fold_spec['fold']}.")
     if val_set != test_set:
         raise RuntimeError(
-            f"Validation and test signer groups must be identical "
-            f"in fold {fold_spec['fold']}."
+            f"Fold {fold_spec['fold']} does not reproduce the Alves split: "
+            "validation and test signer groups must be identical."
         )
-
-    if train_set | test_set != EXPECTED_SIGNERS:
+    if train_set | val_set | test_set != EXPECTED_SIGNERS:
         raise RuntimeError(
             f"Fold {fold_spec['fold']} does not cover all 20 signers."
         )
-
-    # if len(train_people) != 12 or len(val_people) != 4 or len(test_people) != 4:
-    #     raise RuntimeError(
-    #         f"Invalid split sizes in fold {fold_spec['fold']}: "
-    #         f"train={len(train_people)}, val={len(val_people)}, test={len(test_people)}"
-    #     )
-    # if train_set & val_set or train_set & test_set or val_set & test_set:
-    #     raise RuntimeError(f"Signer leakage detected in fold {fold_spec['fold']}.")
-    # if train_set | val_set | test_set != EXPECTED_SIGNERS:
-    #     raise RuntimeError(f"Fold {fold_spec['fold']} does not cover all 20 signers.")
 
     return train_people, val_people, test_people
 
@@ -245,7 +229,7 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("experiments/ksl_alves_groups_16_4"),
+        default=Path("experiments/ksl_alves_same_groups"),
     )
     parser.add_argument(
         "--subset",
@@ -301,7 +285,7 @@ def main() -> None:
         f"({effective_subset_landmark_count(args.subset)} effective landmarks)"
     )
     print(f"imputation:       {imputation_label(args.imputation)}")
-    print("protocol:         Alves grouped KSL evaluation (16 train / 4 val-test)")
+    print("protocol:         Alves KSL split (16 train / same 4 val and test)")
     print("folds:            5")
     print(f"device:           {args.device}")
     print(f"epochs:           {args.epochs}")
@@ -356,9 +340,32 @@ def main() -> None:
         failed_path = run_dir / "status_failed.json"
         checkpoint_path = run_dir / "best_model.pth"
 
+        expected_result = {
+            "dataset": args.dataset,
+            "protocol": "alves_grouped_16_4",
+            "fold": fold,
+            "subset": args.subset,
+            "imputation": args.imputation,
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "learning_rate": args.lr,
+            "weight_decay": args.wd,
+            "patience": args.patience,
+            "seed": args.seed,
+            "model": args.model,
+            "image_method": args.image_method,
+            "train_people": train_people,
+            "validation_people": val_people,
+            "test_people": test_people,
+        }
         if args.resume and result_path.exists() and not args.force_run:
-            print(f"Result already exists; skipping: {result_path}")
-            continue
+            if result_matches(result_path, expected_result):
+                print(f"Matching result already exists; skipping: {result_path}")
+                continue
+            raise RuntimeError(
+                f"Existing result does not match the requested configuration: {result_path}. "
+                "Use a new results directory or --force-run to replace it."
+            )
 
         run_dir.mkdir(parents=True, exist_ok=True)
         failed_path.unlink(missing_ok=True)
@@ -368,7 +375,7 @@ def main() -> None:
             {
                 "status": "running",
                 "dataset": args.dataset,
-                "protocol": "alves_same_signer_groups",
+                "protocol": "alves_grouped_16_4",
                 "fold": fold,
                 "subset": args.subset,
                 "imputation": args.imputation,
@@ -381,7 +388,7 @@ def main() -> None:
 
         reference = (
             f"dataset={args.dataset}"
-            f"__protocol=alves_same_signer_groups"
+            f"__protocol=alves_grouped_16_4"
             f"__subset={args.subset}"
             f"__imputation={imputation_label(args.imputation)}"
             f"__fold={fold:02d}"

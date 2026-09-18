@@ -19,11 +19,9 @@ INCLUDE-50 fixed split::
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
-import pandas as pd
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -72,57 +70,41 @@ def load_dataframe(
     subset: str,
     no_imputation: bool,
     data_dir: str,
-) -> pd.DataFrame:
-    if dataset == "ksl":
-        return load_and_prepare_csv(
-            Path(data_dir) / "interim" / "ksl" / "ksl_mediapipe.csv",
-            subset=subset,
-            use_imputation=not no_imputation,
-        )
-
-    if dataset == "include50":
-        return load_and_prepare_csv(
-            Path(data_dir)
-            / "interim"
-            / "include50"
-            / "include50_mediapipe_with_split.csv",
-            subset=subset,
-            use_imputation=not no_imputation,
-            person_col="split",
-            category_col="sign_id",
-            video_col="sequence_id",
-            frame_col="frame_id",
-            lowercase_person=True,
-            allowed_person_values={"train", "val", "test"},
-        )
-
-    suffix = "_no_imputation" if no_imputation else ""
-    csv_path = (
-        Path(data_dir)
-        / "processed"
-        / dataset
-        / f"{dataset}_{subset}{suffix}.csv"
+):
+    schemas = {
+        "ksl": {
+            "file": "ksl_mediapipe.csv", "person": "interpreter",
+            "category": "sign_id", "video": "video_name", "frame": "frame_id",
+        },
+        "minds": {
+            "file": "minds_mediapipe.csv", "person": "person",
+            "category": "category", "video": "video_name", "frame": "frame",
+        },
+        "ufop": {
+            "file": "ufop_mediapipe.csv", "person": "participant_id",
+            "category": "sign_id", "video": "sample_id", "frame": "frame_id",
+        },
+        "include50": {
+            "file": "include50_mediapipe_with_split.csv", "person": "split",
+            "category": "sign_id", "video": "sequence_id", "frame": "frame_id",
+        },
+    }
+    if dataset not in schemas:
+        raise ValueError(f"Unknown dataset {dataset!r}; choose one of {sorted(schemas)}")
+    schema = schemas[dataset]
+    csv_path = Path(data_dir) / "interim" / dataset / schema["file"]
+    return load_and_prepare_csv(
+        csv_path,
+        subset=subset,
+        use_imputation=not no_imputation,
+        person_col=schema["person"],
+        category_col=schema["category"],
+        video_col=schema["video"],
+        frame_col=schema["frame"],
+        lowercase_person=dataset == "include50",
+        allowed_person_values={"train", "val", "test"}
+        if dataset == "include50" else None,
     )
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Processed CSV not found: {csv_path}. Run 02_filter_landmarks.py "
-            "first or verify --subset and --data-dir."
-        )
-
-    dataframe = pd.read_csv(csv_path)
-    if dataset == "minds" and "person" not in dataframe.columns:
-        pattern = re.compile(r".*Sinalizador(\d+)-.+\.mp4", re.IGNORECASE)
-
-        def extract_signer(video_name: str) -> int:
-            match = pattern.match(str(video_name))
-            if not match:
-                raise ValueError(
-                    f"Could not extract the signer id from video name: {video_name}"
-                )
-            return int(match.group(1))
-
-        dataframe["person"] = dataframe["video_name"].map(extract_signer)
-    return dataframe
 
 
 def main() -> None:

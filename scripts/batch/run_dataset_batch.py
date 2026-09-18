@@ -67,6 +67,15 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
     os.replace(temporary_path, path)
 
 
+def result_matches(path: Path, expected: dict[str, Any]) -> bool:
+    """Return whether an existing result was produced by the requested run."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return all(payload.get(key) == value for key, value in expected.items())
+
+
 def load_or_create_preprocessed(
     *,
     data_csv: Path,
@@ -250,8 +259,23 @@ def main() -> None:
         fixed_validation_person=args.fixed_val_person,
     )
 
+    common_result_config = {
+        "dataset": args.dataset,
+        "protocol": args.protocol,
+        "subset": args.subset,
+        "imputation": args.imputation,
+        "epochs": args.epochs,
+        "learning_rate": args.lr,
+        "weight_decay": args.wd,
+        "batch_size": args.batch_size,
+        "patience": args.patience,
+        "model": args.model,
+        "image_method": args.image_method,
+        "seed": args.seed,
+    }
+
     def result_exists(test_person: Any, validation_person: Any) -> bool:
-        return (
+        path = (
             run_directory(
                 args.results_dir,
                 args.subset,
@@ -260,7 +284,15 @@ def main() -> None:
                 validation_person,
             )
             / "result.json"
-        ).exists()
+        )
+        return path.exists() and result_matches(
+            path,
+            {
+                **common_result_config,
+                "test_person": test_person,
+                "val_person": validation_person,
+            },
+        )
 
     completed_before = sum(
         result_exists(test_person, validation_person)
@@ -298,8 +330,18 @@ def main() -> None:
         checkpoint_path = current_run_dir / "best_model.pth"
 
         if args.resume and result_path.exists():
-            skipped_completed += 1
-            continue
+            expected_result = {
+                **common_result_config,
+                "test_person": test_person,
+                "val_person": validation_person,
+            }
+            if result_matches(result_path, expected_result):
+                skipped_completed += 1
+                continue
+            raise RuntimeError(
+                f"Existing result does not match the requested configuration: {result_path}. "
+                "Use a new results directory or run with --resume false to replace it."
+            )
         if args.skip_failed and failed_path.exists():
             skipped_failed += 1
             continue
