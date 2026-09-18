@@ -25,8 +25,6 @@ from sklearn.metrics import (
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from src.preprocessing.landmark_dataframe import effective_subset_landmark_count
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
@@ -48,6 +46,7 @@ if str(SRC_DIR) not in sys.path:
 
 from models.base_model import BaseModel  # noqa: E402
 from preprocessing.landmark_dataframe import (  # noqa: E402
+    effective_subset_landmark_count,
     imputation_label,
     load_and_prepare_csv,
     subset_indices,

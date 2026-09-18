@@ -62,6 +62,37 @@ def state_dict_to_cpu(model: torch.nn.Module) -> dict[str, torch.Tensor]:
     }
 
 
+def validation_loss_value(
+    *,
+    loss_sum: float,
+    sample_count: int,
+    last_batch_loss: float,
+    alves_legacy_validation: bool,
+) -> float:
+    """Return the validation loss for the selected protocol semantics."""
+
+    if sample_count < 1:
+        raise ValueError("sample_count must be positive")
+    if alves_legacy_validation:
+        return float(last_batch_loss)
+    return float(loss_sum / sample_count)
+
+
+def checkpoint_should_update(
+    *,
+    validation_loss: float,
+    validation_accuracy: float,
+    best_validation_loss: float,
+    best_validation_accuracy: float,
+    alves_legacy_validation: bool,
+) -> bool:
+    """Choose a checkpoint using corrected or Alves-compatible semantics."""
+
+    if alves_legacy_validation:
+        return validation_accuracy > best_validation_accuracy
+    return validation_loss < best_validation_loss
+
+
 class Trainer:
     """Train one fold or one fixed train/validation/test split."""
 
@@ -71,7 +102,6 @@ class Trainer:
 
     def run(self, df: pd.DataFrame) -> dict:
         config = self.cfg
-        # seed = int(config.get("seed", 42))
         seed = int(config.get("seed", 1638102311))
         set_seed(seed)
 
@@ -186,6 +216,9 @@ class Trainer:
 
         epochs = int(config.get("epochs", 30))
         patience = int(config.get("patience", 5))
+        alves_legacy_validation = bool(
+            config.get("alves_legacy_validation", False)
+        )
         history = {
             "train_loss": [],
             "train_accuracy": [],
@@ -237,8 +270,10 @@ class Trainer:
 
             if validation_loader is not None:
                 model.eval()
+                validation_loss_sum = 0.0
                 validation_correct = 0
                 validation_total = 0
+                last_validation_loss = 0.0
 
                 with torch.no_grad():
                     for inputs, labels in validation_loader:
@@ -246,6 +281,11 @@ class Trainer:
                         labels = labels.to(self.device, non_blocking=True)
 
                         outputs = model(inputs)
+                        batch_loss = criterion(outputs, labels)
+                        last_validation_loss = batch_loss.item()
+                        validation_loss_sum += (
+                            last_validation_loss * inputs.size(0)
+                        )
 
                         validation_correct += (
                             outputs.argmax(dim=1) == labels
@@ -256,39 +296,16 @@ class Trainer:
                     raise RuntimeError("No validation samples were processed.")
 
                 validation_accuracy = validation_correct / validation_total
-
-                # Same validation-loss calculation used by Alves:
-                # loss from the last validation batch.
-                validation_loss = criterion(outputs, labels).item()
+                validation_loss = validation_loss_value(
+                    loss_sum=validation_loss_sum,
+                    sample_count=validation_total,
+                    last_batch_loss=last_validation_loss,
+                    alves_legacy_validation=alves_legacy_validation,
+                )
 
             else:
                 validation_loss = train_loss
                 validation_accuracy = train_accuracy
-
-            # if validation_loader is not None:
-            #     model.eval()
-            #     validation_loss_sum = 0.0
-            #     validation_correct = 0
-            #     validation_total = 0
-            #     with torch.no_grad():
-            #         for inputs, labels in validation_loader:
-            #             inputs = inputs.to(self.device, non_blocking=True)
-            #             labels = labels.to(self.device, non_blocking=True)
-            #             outputs = model(inputs)
-            #             batch_loss = criterion(outputs, labels)
-            #             validation_loss_sum += batch_loss.item() * inputs.size(0)
-            #             validation_correct += (
-            #                 outputs.argmax(dim=1) == labels
-            #             ).sum().item()
-            #             validation_total += labels.size(0)
-
-            #     if validation_total == 0:
-            #         raise RuntimeError("No validation samples were processed.")
-            #     validation_loss = validation_loss_sum / validation_total
-            #     validation_accuracy = validation_correct / validation_total
-            # else:
-            #     validation_loss = train_loss
-            #     validation_accuracy = train_accuracy
 
             history["validation_loss"].append(float(validation_loss))
             history["validation_accuracy"].append(float(validation_accuracy))
@@ -298,14 +315,20 @@ class Trainer:
                 validation_accuracy,
             )
 
-            # Save the checkpoint with the highest validation accuracy.
-            if validation_accuracy > best_validation_accuracy:
+            improved_loss = validation_loss < best_validation_loss
+            improved_checkpoint = checkpoint_should_update(
+                validation_loss=validation_loss,
+                validation_accuracy=validation_accuracy,
+                best_validation_loss=best_validation_loss,
+                best_validation_accuracy=best_validation_accuracy,
+                alves_legacy_validation=alves_legacy_validation,
+            )
+            if improved_checkpoint:
                 best_validation_accuracy = validation_accuracy
                 best_epoch = current_epoch
                 best_weights = state_dict_to_cpu(model)
 
-            # Early stopping remains controlled by validation loss.
-            if validation_loss < best_validation_loss:
+            if improved_loss:
                 best_validation_loss = validation_loss
                 epochs_without_improvement = 0
             else:
@@ -402,6 +425,7 @@ class Trainer:
             "device": str(self.device),
             "validate_people": validation_people,
             "test_people": test_people,
+            "alves_legacy_validation": alves_legacy_validation,
             "optimizer": {
                 "lr": config["learning_rate"],
                 "weight_decay": config["weight_decay"],

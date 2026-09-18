@@ -15,8 +15,6 @@ from typing import Any
 
 import pandas as pd
 
-# from src.preprocessing.landmark_dataframe import effective_subset_landmark_count
-
 def find_project_root() -> Path:
     for candidate in [Path.cwd(), *Path(__file__).resolve().parents]:
         if (candidate / "src").exists():
@@ -122,14 +120,14 @@ def main() -> None:
     parser.add_argument(
         "--data-csv",
         default=Path(
-            "data/interim/include50_official/"
-            "include50_official_mediapipe_with_split.csv"
+            "data/interim/include50/"
+            "include50_mediapipe_with_split.csv"
         ),
         type=Path,
     )
     parser.add_argument(
         "--results-dir",
-        default=Path("experiments/include50_official_split_grid"),
+        default=Path("experiments/include50_split_grid"),
         type=Path,
     )
     parser.add_argument(
@@ -152,8 +150,7 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--wd", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=5)
-    # parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--seed", type=int, default=1638102311)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--model", default="resnet18")
     parser.add_argument("--image-method", default="Skeleton-DML")
     parser.add_argument("--category-col", default="sign_id")
@@ -213,6 +210,7 @@ def main() -> None:
     expected_result = {
         "dataset": args.dataset,
         "protocol": "fixed_split",
+        "training_semantics": "mean_val_loss_v2",
         "subset": args.subset,
         "imputation": args.imputation,
         "epochs": args.epochs,
@@ -241,6 +239,7 @@ def main() -> None:
             "status": "running",
             "dataset": args.dataset,
             "protocol": "fixed_split",
+            "training_semantics": "mean_val_loss_v2",
             "subset": args.subset,
             "imputation": args.imputation,
             "started_at": datetime.now().isoformat(),
@@ -291,6 +290,7 @@ def main() -> None:
             "status": "completed",
             "dataset": args.dataset,
             "protocol": "fixed_split",
+            "training_semantics": "mean_val_loss_v2",
             "subset": args.subset,
             "subset_landmarks": effective_subset_landmark_count(args.subset),
             "imputation": args.imputation,

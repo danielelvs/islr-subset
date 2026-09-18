@@ -16,6 +16,7 @@ if str(SRC_DIR) not in sys.path:
 from preprocessing.landmark_dataframe import prepare_landmark_dataframe
 from preprocessing.landmark_subsets import SUBSETS
 from training.lopo_dataset import LopoDataset
+from training.trainer import checkpoint_should_update, validation_loss_value
 
 
 class _DummyRepresentation:
@@ -29,6 +30,44 @@ class _DummyRepresentation:
 
 
 class CorePipelineTests(unittest.TestCase):
+    def test_validation_semantics_are_protocol_specific(self) -> None:
+        self.assertAlmostEqual(
+            validation_loss_value(
+                loss_sum=7.0,
+                sample_count=4,
+                last_batch_loss=2.5,
+                alves_legacy_validation=False,
+            ),
+            1.75,
+        )
+        self.assertAlmostEqual(
+            validation_loss_value(
+                loss_sum=7.0,
+                sample_count=4,
+                last_batch_loss=2.5,
+                alves_legacy_validation=True,
+            ),
+            2.5,
+        )
+        self.assertTrue(
+            checkpoint_should_update(
+                validation_loss=0.8,
+                validation_accuracy=0.6,
+                best_validation_loss=1.0,
+                best_validation_accuracy=0.7,
+                alves_legacy_validation=False,
+            )
+        )
+        self.assertFalse(
+            checkpoint_should_update(
+                validation_loss=0.8,
+                validation_accuracy=0.6,
+                best_validation_loss=1.0,
+                best_validation_accuracy=0.7,
+                alves_legacy_validation=True,
+            )
+        )
+
     def test_landmark_subset_counts(self) -> None:
         expected = {
             "all": 543,

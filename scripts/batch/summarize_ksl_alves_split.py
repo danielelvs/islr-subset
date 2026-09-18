@@ -45,6 +45,9 @@ def main() -> None:
                 "subset": data["subset"],
                 "imputation": data["imputation_label"],
                 "fold": int(data["fold"]),
+                "training_semantics": data.get(
+                    "training_semantics", "alves_legacy_v1"
+                ),
                 "train_people": ",".join(data["train_people"]),
                 "validation_people": ",".join(data["validation_people"]),
                 "test_people": ",".join(data["test_people"]),

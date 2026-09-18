@@ -33,6 +33,7 @@ def read_result(path: Path) -> dict[str, Any]:
         "status": payload.get("status"),
         "dataset": payload.get("dataset"),
         "protocol": payload.get("protocol"),
+        "training_semantics": payload.get("training_semantics", "legacy_unspecified"),
         "subset": payload.get("subset"),
         "subset_landmarks": payload.get("subset_landmarks"),
         "imputation": payload.get("imputation"),

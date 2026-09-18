@@ -39,6 +39,7 @@ This is a harmonized collection of derived artifacts. It does not assert that th
 - **Coordinates per frame:** 1,629 (`543 landmarks × 3 axes`)
 - **Total columns in `frames.csv`:** 1,641
 - **Processing repository:** [danielelvs/islr-subset](https://github.com/danielelvs/islr-subset)
+- **Hugging Face collection:** [ISLR Subsets Datasets](https://huggingface.co/collections/danielelvs/islr-subsets-datasets)
 
 ## Release Statistics
 
@@ -236,9 +237,22 @@ Known source pages:
 - [MINDS-Libras catalogue entry](https://live.european-language-grid.eu/catalogue/lcr/21907)
 - [LIBRAS-UFOP thesis record](https://educapes.capes.gov.br/handle/capes/650935?mode=full)
 
-<!-- ## Citation
+## Citation
 
-Cite this release or its associated repository version and every original source used in an experiment. INCLUDE should at minimum be cited as:
+Cite the associated paper when using this release:
+
+```bibtex
+@article{dosSantos2025proper,
+  title   = {Proper Body Landmark Subset Enables More Accurate and 5X Faster Recognition of Isolated Signs in LIBRAS},
+  author  = {dos Santos, Daniele L. V. and Pereira, Thiago B. and Alves, Carlos Eduardo G. R. and Tello, Richard J. M. G. and Boldt, Francisco de A. and Paix{\~a}o, Thiago M.},
+  journal = {arXiv preprint arXiv:2510.24887},
+  year    = {2025},
+  doi     = {10.48550/arXiv.2510.24887}
+}
+```
+
+Cite every original source represented in the experiment as well. INCLUDE
+should at minimum be cited as:
 
 ```bibtex
 @inproceedings{sridhar2020include,
@@ -250,7 +264,8 @@ Cite this release or its associated repository version and every original source
 }
 ```
 
-Add the verified KSL, MINDS-Libras, and LIBRAS-UFOP citations from the exact downloaded versions before public release. Do not substitute a citation from a similarly named corpus. -->
+Use the source pages above to identify the exact KSL, MINDS-Libras, and
+LIBRAS-UFOP versions used in an experiment.
 
 ## Reproducibility and Versioning
 

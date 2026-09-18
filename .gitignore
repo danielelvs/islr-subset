@@ -170,6 +170,7 @@ cython_debug/
 99_model_output/
 
 *.DS_Store
+codigo.zip
 
 data/*/**
 experiments/*/preprocessed/**

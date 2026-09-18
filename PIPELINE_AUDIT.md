@@ -59,6 +59,15 @@ and UFOP use `signer_id`. Classes are not aligned across sources.
    through the same central preprocessing path with explicit schemas.
 8. Added a streaming selector for extracting one dataset from a published
    combined bundle without loading the complete file into memory.
+9. Restored sample-averaged validation loss and loss-based checkpoint selection
+   for maintained LOPO and fixed-split runs. The Alves compatibility runner
+   explicitly retains its earlier validation behavior.
+10. Added `training_semantics` to new batch results so resume checks cannot mix
+    legacy and corrected training behavior, while retaining the existing INCLUDE-50 results directory.
+11. Made protocol seeds explicit in dataset configurations and batch commands:
+    seed 42 for LOPO/INCLUDE-50 and 1638102311 for the Alves reproduction.
+12. Removed a redundant 26 MB repository archive, duplicate dependency entry,
+    and local absolute paths from saved notebook outputs.
 
 ## Execution paths
 
@@ -101,7 +110,12 @@ Pass those names explicitly to `run_dataset_batch.py`. For INCLUDE-50, use
 - Native-input preflight passes for all four datasets.
 - Tests cover native fixed-split preparation, temporal interpolation, landmark
   counts, canonical publication metadata, duplicate keys, missing schema
-  columns, and the exact Alves KSL grouped split.
+  columns, protocol-specific validation semantics, and the exact Alves KSL
+  grouped split.
+- All tracked experiment JSON files parse successfully: 3,800 nested-LOPO,
+  50 Alves-grouped, and 30 fixed-split results.
+- A one-epoch INCLUDE-50 CPU smoke test completed through preprocessing,
+  training, validation, testing, and result serialization.
 
 Full GPU training was not started during the audit. The current machine does
 not expose CUDA; experiment configs remain set to CUDA for the target server.

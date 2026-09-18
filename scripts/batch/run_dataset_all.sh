@@ -39,6 +39,7 @@ NUM_WORKERS="${NUM_WORKERS:-0}"
 LR="${LR:-0.0001}"
 WD="${WD:-0.0001}"
 DEVICE="${DEVICE:-cuda}"
+SEED="${SEED:-42}"
 MAX_RUNS="${MAX_RUNS:-none}"
 PROTOCOL="${PROTOCOL:-nested_lopo}"
 SAVE_MODELS="${SAVE_MODELS:-false}"
@@ -68,6 +69,7 @@ for subset in $SUBSETS; do
       --num-workers "$NUM_WORKERS" \
       --lr "$LR" \
       --wd "$WD" \
+      --seed "$SEED" \
       --protocol "$PROTOCOL" \
       --save-model "$SAVE_MODELS" \
       --cache-preprocessed "$CACHE_PREPROCESSED" \

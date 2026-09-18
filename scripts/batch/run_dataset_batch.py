@@ -262,6 +262,7 @@ def main() -> None:
     common_result_config = {
         "dataset": args.dataset,
         "protocol": args.protocol,
+        "training_semantics": "mean_val_loss_v2",
         "subset": args.subset,
         "imputation": args.imputation,
         "epochs": args.epochs,
@@ -356,6 +357,7 @@ def main() -> None:
                 "status": "running",
                 "dataset": args.dataset,
                 "protocol": args.protocol,
+                "training_semantics": "mean_val_loss_v2",
                 "subset": args.subset,
                 "imputation": args.imputation,
                 "test_person": test_person,
@@ -409,6 +411,7 @@ def main() -> None:
                 "status": "completed",
                 "dataset": args.dataset,
                 "protocol": args.protocol,
+                "training_semantics": "mean_val_loss_v2",
                 "subset": args.subset,
                 "subset_landmarks": effective_subset_landmark_count(args.subset),
                 "imputation": args.imputation,
@@ -485,6 +488,8 @@ def main() -> None:
         f"Condition progress: {completed_after}/{total} "
         f"({completed_after / total * 100:.1f}%)"
     )
+    if failed_now:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

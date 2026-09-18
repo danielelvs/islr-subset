@@ -5,7 +5,7 @@ Official experiment repository for:
 > **[Proper Body Landmark Subset Enables More Accurate and 5X Faster Recognition of Isolated Signs in LIBRAS](https://arxiv.org/abs/2510.24887)**  
 > Daniele L. V. dos Santos, Thiago B. Pereira, Carlos Eduardo G. R. Alves,
 > Richard J. M. G. Tello, Francisco de A. Boldt, and Thiago M. Paixão  
-> arXiv:2510.24887, 2025; accepted for presentation at IEEE SAS 2026.
+> arXiv:2510.24887, 2025.
 
 The paper investigates lightweight body landmark extraction for isolated sign
 language recognition. Replacing OpenPose directly with MediaPipe improves
@@ -28,9 +28,10 @@ Main contributions implemented here:
 - accuracy, F1-score, extraction latency, and inference-speed analysis; and
 - a harmonized publication schema for the four processed landmark datasets.
 
-The project supports two evaluation protocols:
+The project supports three evaluation protocols:
 
 - **Nested LOPO** for datasets with signer identifiers: MINDS-Libras, LIBRAS-UFOP, and KSL.
+- **Alves grouped split** for direct comparison with the original five-group KSL implementation.
 - **Fixed train/validation/test split** for INCLUDE-50, because the available version does not provide a reliable signer identifier.
 
 ## Contents
@@ -93,7 +94,7 @@ with similar names are not aligned across languages or sources.
 | Dataset | Language | Frames in the current CSV | Samples/segments | Classes | Available signer IDs | Protocol |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
 | [INCLUDE-50](https://huggingface.co/datasets/ai4bharat/INCLUDE) | Indian Sign Language | 61,613 | 929 | 50 | unavailable | official fixed split |
-| [KSL](https://github.com/Yangseung/KSL) | Korean Sign Language | 108,373 | 1,229 | 67 | 20 | nested LOPO |
+| [KSL](https://github.com/Yangseung/KSL) | Korean Sign Language | 108,373 | 1,229 | 67 | 20 | nested LOPO; optional Alves grouped split |
 | [MINDS-Libras](https://zenodo.org/records/2667329) | Brazilian Sign Language | 109,392 | 800 | 20 | 8 | nested LOPO |
 | [LIBRAS-UFOP](https://www.sciencedirect.com/science/article/pii/S0957417420309143) | Brazilian Sign Language | 115,656 | 3,040 | 56 | 5 | nested LOPO |
 
@@ -139,8 +140,11 @@ scripts/
 │   ├── run_dataset_imputation_only.sh
 │   ├── run_include50_split.py
 │   ├── run_include50_split_all.sh
+│   ├── run_ksl_alves_split.py
+│   ├── run_ksl_alves_split_all.sh
 │   ├── run_pipeline.sh
-│   └── summarize_dataset_results.py
+│   ├── summarize_dataset_results.py
+│   └── summarize_ksl_alves_split.py
 ├── preprocessing/
 │   ├── select_published_dataset.py
 │   └── validate_dataset_csv.py
@@ -170,7 +174,7 @@ Python 3.10 is recommended. The pinned PyTorch version used by this project shou
 ```bash
 cd /path/to/islr-subset
 
-/usr/bin/python3.10 -m venv venv
+python3.10 -m venv venv
 source venv/bin/activate
 
 python --version
@@ -260,6 +264,25 @@ For `n` signers, each subset/imputation condition contains `n × (n - 1)` runs.
 | LIBRAS-UFOP  |       5 |                 20 |
 | KSL          |      20 |                380 |
 
+### KSL Alves grouped split
+
+For direct comparison with the Alves implementation, KSL also supports its
+original five-group protocol. The 20 signers are divided into consecutive
+groups of four. In each fold, one group is excluded from training and used for
+both validation and testing, leaving 16 training signers:
+
+| Fold | Validation and test signers | Training signers |
+| ---: | --- | --- |
+| 1 | 0, 1, 2, 3 | 4–19 |
+| 2 | 4, 5, 6, 7 | 0–3 and 8–19 |
+| 3 | 8, 9, 10, 11 | 0–7 and 12–19 |
+| 4 | 12, 13, 14, 15 | 0–11 and 16–19 |
+| 5 | 16, 17, 18, 19 | 0–15 |
+
+This protocol contains five runs per subset/imputation condition. Validation
+and test are intentionally identical to reproduce the earlier implementation;
+use nested LOPO when distinct model-selection and test signers are required.
+
 ### INCLUDE-50
 
 INCLUDE-50 uses the fixed split stored in the CSV column `split`:
@@ -347,7 +370,7 @@ Always run a short test before launching the full grid.
 python scripts/batch/run_dataset_batch.py \
   --dataset ksl \
   --data-csv data/interim/ksl/ksl_mediapipe.csv \
-  --results-dir experiments/ksl_nested_lopo_grid_50 \
+  --results-dir experiments/smoke/ksl_nested_lopo \
   --subset 2nd \
   --imputation true \
   --max-runs 1 \
@@ -366,10 +389,25 @@ python scripts/batch/run_dataset_batch.py \
 ```bash
 python scripts/batch/run_include50_split.py \
   --data-csv data/interim/include50/include50_mediapipe_with_split.csv \
-  --results-dir experiments/include50_split_grid \
+  --results-dir experiments/smoke/include50_fixed_split \
   --subset 2nd \
   --imputation true \
   --epochs 2 \
+  --patience 1 \
+  --batch-size 64 \
+  --device cuda
+```
+
+### KSL Alves grouped split smoke test
+
+```bash
+python scripts/batch/run_ksl_alves_split.py \
+  --data-csv data/interim/ksl/ksl_mediapipe.csv \
+  --results-dir experiments/smoke/ksl_alves_same_groups \
+  --subset 2nd \
+  --imputation true \
+  --max-runs 1 \
+  --epochs 1 \
   --patience 1 \
   --batch-size 64 \
   --device cuda
@@ -404,6 +442,9 @@ conditions (five landmark subsets times two imputation settings).
 
 Edit `configs/datasets/<dataset>.env` before starting to change the device,
 epochs, subsets, imputation settings, cache behavior, or checkpoint saving.
+The LOPO and INCLUDE-50 configurations use seed `42`. The Alves compatibility
+runner retains seed `1638102311` from that implementation. Override `SEED` in
+the dataset configuration or pass `--seed` for an explicitly different run.
 The explicit `PERSON_COL`, `CATEGORY_COL`, `VIDEO_COL`, and `FRAME_COL` values in
 each LOPO configuration are part of the dataset protocol and should stay aligned
 with the source CSV schema.
@@ -601,7 +642,7 @@ python scripts/analysis/evaluate_checkpoint_speed.py \
   --subset 2nd \
   --imputation true \
   --category-col sign_id \
-  --video-col sequence_id \
+  --video-col video_name \
   --frame-col frame_id \
   --person-col interpreter \
   --eval-person 3 \
@@ -649,6 +690,7 @@ data/processed/multilingual-islr-mediapipe/
 ├── samples.csv
 ├── data_dictionary.csv
 ├── manifest.json
+├── SHA256SUMS
 └── README.md
 ```
 
@@ -658,6 +700,8 @@ operates on one source at a time because label spaces and evaluation protocols
 are not interchangeable. The Hugging Face dataset card is available at
 [`data/README.md`](data/README.md), and the schema decisions are documented in
 [`notebooks/merge_mediapipe_data_dictionary.md`](notebooks/merge_mediapipe_data_dictionary.md).
+The related releases are organized in the
+[ISLR Subsets Datasets collection](https://huggingface.co/collections/danielelvs/islr-subsets-datasets).
 
 ## Result provenance
 
@@ -677,12 +721,34 @@ Run the exact Alves KSL split with:
 python scripts/batch/summarize_ksl_alves_split.py
 ```
 
+The currently stored five-fold results are summarized below. Values are the
+mean and sample standard deviation across the five grouped folds.
+
+| Subset | Imputation | Accuracy | Macro F1 |
+| --- | --- | ---: | ---: |
+| all | without | 0.3353 ± 0.0330 | 0.3205 ± 0.0339 |
+| all | with | 0.4464 ± 0.0469 | 0.4234 ± 0.0471 |
+| laines | without | 0.5397 ± 0.0664 | 0.5178 ± 0.0530 |
+| laines | with | 0.7036 ± 0.0827 | 0.6924 ± 0.0813 |
+| arcanjo | without | 0.6833 ± 0.0803 | 0.6769 ± 0.0717 |
+| arcanjo | with | **0.7721 ± 0.0602** | **0.7654 ± 0.0607** |
+| 1st | without | 0.5258 ± 0.1020 | 0.5161 ± 0.0969 |
+| 1st | with | 0.6806 ± 0.1001 | 0.6759 ± 0.0964 |
+| 2nd | without | 0.6386 ± 0.0813 | 0.6284 ± 0.0811 |
+| 2nd | with | 0.7479 ± 0.0756 | 0.7442 ± 0.0737 |
+
+The machine-readable reports are stored under
+`reports/ksl_alves_same_groups/` as per-run, progress, and summary CSV files.
+
 ## Important implementation notes
 
 - Landmark subset selection is performed before image generation.
 - The Laines subset selects 67 source landmarks. During preprocessing, a synthetic chest midpoint is computed from the two shoulder landmarks, resulting in 68 effective points for the model.
 - The dataset class does not silently remove MediaPipe pose landmarks after subset selection.
 - Training checkpoints are selected by the lowest validation loss, matching the early-stopping criterion.
+- The Alves grouped compatibility runner preserves the earlier implementation's
+  last-validation-batch loss and highest-validation-accuracy checkpoint rule;
+  other runners use sample-averaged validation loss for both decisions.
 - The requested device is respected; `--device cpu` no longer silently selects CUDA or MPS.
 - Optional timm models are imported lazily, so ResNet-18 training does not fail when timm is absent.
 - INCLUDE-50 never uses `sample_id` as a person identifier.
@@ -703,9 +769,6 @@ pipeline, cite the associated paper:
   doi     = {10.48550/arXiv.2510.24887}
 }
 ```
-
-The paper is also accepted for presentation at IEEE SAS 2026. Update the venue
-fields above when the proceedings citation becomes available.
 
 Skeleton-DML originates from the following work, which should also be cited
 when that representation is used:

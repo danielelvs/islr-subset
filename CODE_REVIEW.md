@@ -19,6 +19,11 @@ This review focused on correctness, reproducibility, runtime behavior, disk use,
 5. **Validation loss was averaged by batch instead of by sample.**
    The loss is now accumulated using batch size and divided by the number of validation samples.
 
+   The dedicated Alves grouped compatibility runner explicitly enables the
+   earlier last-validation-batch loss and validation-accuracy checkpoint rule
+   so its historical five-fold results remain reproducible. All maintained
+   LOPO and fixed-split runners use the corrected default.
+
 6. **The command-line device option was not respected.**
    Batch scripts only printed the requested device while `Trainer` selected a device independently. The configured device is now passed to and enforced by `Trainer`.
 
