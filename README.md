@@ -770,6 +770,19 @@ pipeline, cite the associated paper:
 }
 ```
 
+and dataset:
+
+```bibtex
+@misc{daniele_leite_2026,
+	author       = { Daniele Leite },
+	title        = { multilingual-islr-mediapipe (Revision 43964e9) },
+	year         = 2026,
+	url          = { https://huggingface.co/datasets/danielelvs/multilingual-islr-mediapipe },
+	doi          = { 10.57967/hf/10756 },
+	publisher    = { Hugging Face }
+}
+```
+
 Skeleton-DML originates from the following work, which should also be cited
 when that representation is used:
 
